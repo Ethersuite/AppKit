@@ -19,6 +19,9 @@ import UIKit
 /// AppKit.instance.getSessions()
 /// ```
 public class AppKit {
+    
+    public static var connectedWalletPairingTopic: String?
+    
     /// AppKit client instance
     public static var instance: AppKitClient = {
         guard let config = AppKit.config else {
@@ -34,15 +37,10 @@ public class AppKit {
         
         let store = Store.shared
         
-        if let session = client.getSessions().first {
+        if let session = AppKit.connectedWalletPairingTopic == nil ? client.getSessions().first : client.getSessions().first(where: { $0.pairingTopic == AppKit.connectedWalletPairingTopic }) {
             store.session = session
             store.connectedWith = .wc
             store.account = .init(from: session)
-        } else if CoinbaseWalletSDK.shared.isConnected() {
-            
-            let storedAccount = AccountStorage.read()
-            store.connectedWith = .cb
-            store.account = storedAccount
         } else {
             AccountStorage.clear()
         }

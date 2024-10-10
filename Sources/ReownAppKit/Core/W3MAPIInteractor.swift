@@ -52,7 +52,9 @@ final class W3MAPIInteractor: ObservableObject {
         try await fetchWalletImages(for: response.data)
         
         DispatchQueue.main.async { [self] in
-            var wallets = response.data
+            var wallets = response.data.filter {
+                !AppKit.config.excludedWalletIds.contains($0.id)
+            }
                 
             for index in wallets.indices {
                 let contains = store.installedWalletIds.contains(wallets[index].id)
@@ -123,7 +125,9 @@ final class W3MAPIInteractor: ObservableObject {
         
         DispatchQueue.main.async { [self] in
             
-            var wallets = response.data
+            var wallets = response.data.filter {
+                !AppKit.config.excludedWalletIds.contains($0.id)
+            }
             
             for index in wallets.indices {
                 let contains = store.installedWalletIds.contains(wallets[index].id)
