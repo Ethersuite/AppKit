@@ -106,10 +106,17 @@ final class NetworkDetailViewModel: ObservableObject {
     
     @MainActor
     func switchChain(_ to: Chain) async {
-        guard let from = store.selectedChain else { return }
+        guard let session = store.walletSession,
+              let from = store.selectedChain else {
+            return
+        }
         
         do {
-            try await switchEthChain(from: from, to: to)
+            try await switchEthChain(
+                from: from,
+                to: to,
+                session: session
+            )
         } catch {
             AppKit.config.onError(error)
         }
@@ -128,17 +135,15 @@ final class NetworkDetailViewModel: ObservableObject {
     
     @MainActor
     private func switchEthChain(
-        from: Chain,
-        to: Chain
-    ) async throws {
-        guard let chainIdNumber = Int(to.chainReference) else { return }
-        
+           from: Chain,
+          to: Chain,
+          session: Session
+       ) async throws {
+           guard let chainIdNumber = Int(to.chainReference) else { return }
         switch store.connectedWith {
         case .wc:
             
             let chainHex = String(format: "%X", chainIdNumber)
-            
-            guard let session = store.session else { return }
             
             try await AppKit.instance.request(params:
                     .init(

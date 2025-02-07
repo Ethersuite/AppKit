@@ -296,6 +296,22 @@ public final class SignClient: SignClientProtocol {
         return pairingURI
     }
 
+    public func connect(
+        requiredNamespaces: [String: ProposalNamespace],
+        optionalNamespaces: [String: ProposalNamespace]? = nil,
+        sessionProperties: [String: String]? = nil,
+        topic: String
+    ) async throws {
+        logger.debug("Connecting Application with topicId: " + topic)
+        try await appProposeService.propose(
+            pairingTopic: topic,
+            namespaces: requiredNamespaces,
+            optionalNamespaces: optionalNamespaces,
+            sessionProperties: sessionProperties,
+            relay: RelayProtocolOptions(protocol: "irn", data: nil)
+        )
+    }
+
     //---------------------------------------AUTH-----------------------------------
 
     /// For a dApp to propose an authenticated session to a wallet.

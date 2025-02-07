@@ -100,7 +100,7 @@ class Web3ModalViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { topic, _ in
                 
-                if store.session?.topic == topic {
+                if store.walletSession?.topic == topic {
                     store.session = nil
                     store.account = nil
                 }
@@ -178,7 +178,7 @@ class Web3ModalViewModel: ObservableObject {
 
 
     func getChains() -> [Chain] {
-        guard let namespaces = store.session?.namespaces.values else {
+        guard let namespaces = store.walletSession?.namespaces.values else {
             return []
         }
         
@@ -189,7 +189,7 @@ class Web3ModalViewModel: ObservableObject {
                 isChainIdCAIP2Compliant(chainId: chain.absoluteString)
             }
         
-        if let requiredNamespaces = store.session?.requiredNamespaces.values {
+        if let requiredNamespaces = store.walletSession?.requiredNamespaces.values {
             let requiredChains = requiredNamespaces
                 .compactMap { $0.chains }
                 .flatMap { $0 }
@@ -207,7 +207,7 @@ class Web3ModalViewModel: ObservableObject {
     }
     
     func getMethods() -> [String] {
-        guard let session = store.session else {
+        guard let session = store.walletSession else {
             return []
         }
         

@@ -127,6 +127,35 @@ public class AppKitClient {
     /// Namespaces from Web3Modal.config will be used
     /// - Parameters:
     ///   - topic: pairing topic
+    public func connect(
+        topic: String?
+    ) async throws -> WalletConnectURI? {
+        logger.debug("Connecting Application")
+        do {
+            if let topic = topic {
+                //                       try pairingClient.validatePairingExistance(topic)
+                try await signClient.connect(
+                    requiredNamespaces: AppKit.config.sessionParams.requiredNamespaces,
+                    optionalNamespaces: AppKit.config.sessionParams.optionalNamespaces,
+                    sessionProperties: AppKit.config.sessionParams.sessionProperties,
+                    topic: topic
+                )
+                return nil
+            } else {
+                let pairingURI = try await pairingClient.create()
+                try await signClient.connect(
+                    requiredNamespaces: AppKit.config.sessionParams.requiredNamespaces,
+                    optionalNamespaces: AppKit.config.sessionParams.optionalNamespaces,
+                    sessionProperties: AppKit.config.sessionParams.sessionProperties,
+                    topic: pairingURI.topic
+                )
+                return pairingURI
+            }
+        } catch {
+            AppKit.config.onError(error)
+            throw error
+        }
+    }
     public func connect(walletUniversalLink: String?) async throws -> WalletConnectURI? {
         logger.debug("Connecting Application")
         do {
@@ -151,7 +180,7 @@ public class AppKitClient {
         switch store.connectedWith {
         case .wc:
             guard
-                let session = getSessions().first,
+                let session = store.walletSession,
                 let chain = getSelectedChain(),
                 let blockchain = Blockchain(namespace: chain.chainNamespace, reference: chain.chainReference)
             else { return }
