@@ -38,6 +38,14 @@ class Store: ObservableObject {
     }
     
     // WalletConnect specific
+    var walletSession: Session? {
+        AppKit.instance.getSessions().first(
+            where: {
+                $0.pairingTopic == AppKit.connectedWalletPairingTopic
+            }
+        ) ?? AppKit.instance.getSessions().first
+    }
+    
     @Published var session: Session? {
         didSet {
             if let blockchain = session?.accounts.first?.blockchain {
