@@ -30,7 +30,8 @@ final class AutomaticSocketConnectionHandlerTests: XCTestCase {
             backgroundTaskRegistrar: backgroundTaskRegistrar,
             subscriptionsTracker: subscriptionsTracker,
             logger: logger,
-            socketStatusProvider: socketStatusProviderMock
+            socketStatusProvider: socketStatusProviderMock,
+            clientIdAuthenticator: ClientIdAuthenticator(clientIdStorage: ClientIdStorageMock(), logger: ConsoleLoggerMock())
         )
         sut.periodicReconnectionInterval = 0.1 // 100 milliseconds
     }
@@ -262,7 +263,7 @@ final class AutomaticSocketConnectionHandlerTests: XCTestCase {
         // Start a task to call handleInternalConnect and await its result
         let handleConnectTask = Task {
             do {
-                try await sut.handleInternalConnect()
+                try await sut.handleInternalConnect(unconditionally: false)
                 XCTFail("Expected handleInternalConnect to throw NetworkError.connectionFailed after three disconnections")
             } catch NetworkError.connectionFailed {
                 // Expected behavior
@@ -293,7 +294,7 @@ final class AutomaticSocketConnectionHandlerTests: XCTestCase {
         // Start a task to call handleInternalConnect and await its result
         let handleConnectTask = Task {
             do {
-                try await sut.handleInternalConnect()
+                try await sut.handleInternalConnect(unconditionally: false)
                 // Success expected, do nothing
             } catch {
                 XCTFail("Expected handleInternalConnect to succeed, but it threw: \(error)")
@@ -327,7 +328,7 @@ final class AutomaticSocketConnectionHandlerTests: XCTestCase {
         // Start a task to call handleInternalConnect and await its result
         let handleConnectTask = Task {
             do {
-                try await sut.handleInternalConnect()
+                try await sut.handleInternalConnect(unconditionally: false)
                 // Success expected, do nothing
             } catch {
                 XCTFail("Expected handleInternalConnect to succeed after disconnections followed by a connection, but it threw: \(error)")
@@ -373,7 +374,7 @@ final class AutomaticSocketConnectionHandlerTests: XCTestCase {
         // Start a task to call handleInternalConnect and await its result
         let handleConnectTask = Task {
             do {
-                try await sut.handleInternalConnect()
+                try await sut.handleInternalConnect(unconditionally: false)
                 XCTFail("Expected handleInternalConnect to throw NetworkError.connectionFailed due to timeout")
             } catch NetworkError.connectionFailed {
                 // Expected behavior

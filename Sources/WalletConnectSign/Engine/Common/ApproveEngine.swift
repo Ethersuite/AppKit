@@ -31,6 +31,7 @@ final class ApproveEngine {
     private let rpcHistory: RPCHistory
     private let authRequestSubscribersTracking: AuthRequestSubscribersTracking
     private let eventsClient: EventsClientProtocol
+    private let approveEngineLoggingHelper: ApproveEngineLoggingHelper
 
     private var publishers = Set<AnyCancellable>()
 
@@ -64,6 +65,7 @@ final class ApproveEngine {
         self.rpcHistory = rpcHistory
         self.authRequestSubscribersTracking = authRequestSubscribersTracking
         self.eventsClient = eventsClient
+        self.approveEngineLoggingHelper = ApproveEngineLoggingHelper(logger: logger)
 
         setupRequestSubscriptions()
         setupResponseSubscriptions()
@@ -71,9 +73,12 @@ final class ApproveEngine {
     }
 
 
-    func approveProposal(proposerPubKey: String, validating sessionNamespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil) async throws -> Session {
+    func approveProposal(proposerPubKey: String, validating sessionNamespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil) async throws -> Session {
         eventsClient.startTrace(topic: "")
-        logger.debug("Approving session proposal")
+        logger.debug("Approving session proposal...")
+
+        approveEngineLoggingHelper.logSessionNamespaces(sessionNamespaces)
+
         eventsClient.saveTraceEvent(SessionApproveExecutionTraceEvents.approvingSessionProposal)
 
         guard !sessionNamespaces.isEmpty else {
@@ -146,6 +151,7 @@ final class ApproveEngine {
             proposal: proposal,
             namespaces: sessionNamespaces,
             sessionProperties: sessionProperties,
+            scopedProperties: scopedProperties,
             pairingTopic: pairingTopic
         )
 
@@ -216,7 +222,7 @@ final class ApproveEngine {
         kms.deleteSymmetricKey(for: pairingTopic)
     }
 
-    func settle(topic: String, proposal: SessionProposal, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, pairingTopic: String) async throws -> WCSession {
+    func settle(topic: String, proposal: SessionProposal, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil, pairingTopic: String) async throws -> WCSession {
         guard let agreementKeys = kms.getAgreementSecret(for: topic) else {
             throw Errors.agreementMissingOrInvalid
         }
@@ -238,6 +244,7 @@ final class ApproveEngine {
             controller: selfParticipant,
             namespaces: namespaces,
             sessionProperties: sessionProperties,
+            scopedProperties: scopedProperties,
             expiry: Int64(expiry)
         )
 
@@ -277,7 +284,8 @@ private extension ApproveEngine {
 
     func setupRequestSubscriptions() {
         pairingRegisterer.register(method: SessionProposeProtocolMethod.responseAutoReject())
-            .sink { [unowned self] (payload: RequestSubscriptionPayload<SessionType.ProposeParams>) in
+            .sink { [weak self] (payload: RequestSubscriptionPayload<SessionType.ProposeParams>) in
+                guard let self = self else { return }
                 guard let pairing = pairingStore.getPairing(forTopic: payload.topic) else { return }
                 let responseApproveMethod = SessionAuthenticatedProtocolMethod.responseApprove().method
                 if let methods = pairing.methods,
@@ -394,6 +402,12 @@ private extension ApproveEngine {
     func handleSessionProposeRequest(payload: RequestSubscriptionPayload<SessionType.ProposeParams>) {
         logger.debug("Received Session Proposal")
         let proposal = payload.request
+
+        approveEngineLoggingHelper.logProposalNamespaces(title: "Required Namespaces", proposal.requiredNamespaces)
+        if let optionalNamespaces = proposal.optionalNamespaces {
+            approveEngineLoggingHelper.logProposalNamespaces(title: "Optional Namespaces", optionalNamespaces)
+        }
+
         do { try Namespace.validate(proposal.requiredNamespaces) } catch {
             return respondError(payload: payload, reason: .invalidUpdateRequest, protocolMethod: SessionProposeProtocolMethod.responseAutoReject())
         }
@@ -406,7 +420,8 @@ private extension ApproveEngine {
             return
         }
         
-        Task(priority: .high) {
+        Task(priority: .high) { [weak self] in
+            guard let self = self else {return}
             do {
                 let response: VerifyResponse
                 if let attestation = payload.attestation,

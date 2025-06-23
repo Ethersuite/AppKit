@@ -19,6 +19,7 @@ class AutomaticSocketConnectionHandler {
     private let logger: ConsoleLogging
     private let subscriptionsTracker: SubscriptionsTracking
     private let socketStatusProvider: SocketStatusProviding
+    private let clientIdAuthenticator: ClientIdAuthenticating
 
     // MARK: - Configuration
 
@@ -46,7 +47,8 @@ class AutomaticSocketConnectionHandler {
         backgroundTaskRegistrar: BackgroundTaskRegistering = BackgroundTaskRegistrar(),
         subscriptionsTracker: SubscriptionsTracking,
         logger: ConsoleLogging,
-        socketStatusProvider: SocketStatusProviding
+        socketStatusProvider: SocketStatusProviding,
+        clientIdAuthenticator: ClientIdAuthenticating
     ) {
         self.appStateObserver = appStateObserver
         self.socket = socket
@@ -55,6 +57,7 @@ class AutomaticSocketConnectionHandler {
         self.logger = logger
         self.subscriptionsTracker = subscriptionsTracker
         self.socketStatusProvider = socketStatusProvider
+        self.clientIdAuthenticator = clientIdAuthenticator
 
         setUpStateObserving()
         setUpNetworkMonitoring()
@@ -73,7 +76,37 @@ class AutomaticSocketConnectionHandler {
             self.logger.debug("Starting connection process.")
             self.isConnecting = true
             self.logger.debug("Socket request: \(self.socket.request.debugDescription)")
-            self.socket.connect()
+            self.connectSocketWithFreshToken()
+        }
+    }
+
+    private func connectSocketWithFreshToken() {
+        refreshTokenIfNeeded()
+        socket.connect()
+    }
+
+    private func refreshTokenIfNeeded() {
+        guard let authorizationHeader = socket.request.allHTTPHeaderFields?["Authorization"] else { return }
+
+        // Remove "Bearer " prefix if it exists
+        var token = authorizationHeader
+        if token.hasPrefix("Bearer ") {
+            token = String(token.dropFirst("Bearer ".count))
+        }
+
+        do {
+            // Parse the URL and extract only the base URL (without query parameters)
+            var urlComponents = URLComponents(url: socket.request.url!, resolvingAgainstBaseURL: false)
+            urlComponents?.query = nil
+            let baseUrlString = urlComponents?.url?.absoluteString ?? socket.request.url!.absoluteString
+
+            // Refresh the token with just the base URL
+            let refreshedToken = try clientIdAuthenticator.refreshTokenIfNeeded(token: token, url: baseUrlString)
+            let newAuthorizationHeader = "Bearer \(refreshedToken)"
+            socket.request.allHTTPHeaderFields?["Authorization"] = newAuthorizationHeader
+        } catch {
+            // Handle error appropriately
+            logger.error("Error refreshing token: \(error)")
         }
     }
 
@@ -146,7 +179,7 @@ class AutomaticSocketConnectionHandler {
                 return
             }
             self.isConnecting = true
-            self.socket.connect() // Attempt to reconnect
+            self.connectSocketWithFreshToken() // Attempt to reconnect
             // The socketConnectionStatusPublisher handler will stop the timer and reset states if connection is successful
         }
 
@@ -241,100 +274,138 @@ class AutomaticSocketConnectionHandler {
 // MARK: - SocketConnectionHandler
 
 extension AutomaticSocketConnectionHandler: SocketConnectionHandler {
-    func handleInternalConnect() async throws {
+
+    // ignores unconditionally param
+    func handleInternalConnect(unconditionally: Bool) async throws {
         logger.debug("Handling internal connection.")
-        let maxAttempts = maxImmediateAttempts
-        var attempts = 0
-        var isResumed = false // Track if continuation has been resumed
-        let requestTimeout = self.requestTimeout // Timeout set at the class level
-
-        var shouldStartConnect = false
-
-        // Start the connection process immediately if not already connecting
-        syncQueue.sync { [weak self] in
-            guard let self = self else { return }
-            if !self.isConnecting {
-                self.logger.debug("Not already connecting. Will start connection.")
-                self.isConnecting = true
-                shouldStartConnect = true
-            } else {
-                self.logger.debug("Already connecting. Will not start new connection.")
-            }
-        }
-
-        if !shouldStartConnect {
-            // Exit the function early since a connection is already in progress
+        if socket.isConnected {
+            logger.debug("Socket is already connected. Will not start new connection.")
             return
         }
 
-        // Proceed to start the connection
+        let maxAttempts = maxImmediateAttempts
+        let requestTimeout = self.requestTimeout
+        var attempts = 0
+        var isResumed = false
+
+        logger.debug("Checking if we should start a new connection attempt.")
+        let shouldStartConnect = syncQueue.sync { [weak self] () -> Bool in
+            guard let self = self else {
+                return false
+            }
+            if !self.isConnecting {
+                self.logger.debug("Not already connecting. Will set isConnecting = true and proceed.")
+                self.isConnecting = true
+                return true
+            } else {
+                self.logger.debug("Already connecting. Will not start new connection.")
+                return false
+            }
+        }
+
+        guard shouldStartConnect else {
+            logger.debug("Another connection attempt is already in progress, returning early.")
+            return
+        }
+
         logger.debug("Starting connection process.")
         logger.debug("Socket request: \(socket.request.debugDescription)")
-        socket.connect()
+        connectSocketWithFreshToken()
 
-        // Use Combine publisher to monitor connection status
         let connectionStatusPublisher = socketStatusProvider.socketConnectionStatusPublisher
             .share()
             .makeConnectable()
 
         let connection = connectionStatusPublisher.connect()
 
-        // Ensure connection is canceled when done
         defer {
             logger.debug("Cancelling connection status publisher.")
             connection.cancel()
         }
 
-        // Use a Combine publisher to monitor disconnection and timeout
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await withCheckedThrowingContinuation { [weak self] (continuation: CheckedContinuation<Void, Error>) in
+            guard let self = self else {
+                return
+            }
+
             var cancellable: AnyCancellable?
+
+            func cleanupAndRemoveCancellable() {
+                self.logger.debug("Cleaning up any cancellable.")
+                if let c = cancellable {
+                    c.cancel()
+                    self.publishers.remove(c)
+                }
+            }
+
+            func fail(with error: Error) {
+                self.logger.debug("Failing connection with error: \(error)")
+                guard !isResumed else { return }
+                isResumed = true
+                cleanupAndRemoveCancellable()
+                self.syncQueue.async {
+                    self.isConnecting = false
+                }
+                continuation.resume(throwing: error)
+            }
+
+            func succeed() {
+                self.logger.debug("Connection succeeded, finalizing success flow.")
+                guard !isResumed else { return }
+                isResumed = true
+                cleanupAndRemoveCancellable()
+                self.syncQueue.async {
+                    self.isConnecting = false
+                }
+                continuation.resume()
+            }
+
+            func handleMaxAttemptsReached() {
+                self.logger.debug("Max immediate attempts reached (\(attempts)/\(maxAttempts)). Triggering reconnection logic.")
+                self.syncQueue.async {
+                    self.logger.debug("Setting isConnecting = false and calling handleFailedConnectionAndReconnectIfNeeded() on syncQueue.")
+                    self.isConnecting = false
+                    self.handleFailedConnectionAndReconnectIfNeeded()
+                }
+                fail(with: NetworkError.connectionFailed)
+            }
+
+            self.logger.debug("Setting up subscription to connectionStatusPublisher with timeout \(requestTimeout) seconds.")
 
             cancellable = connectionStatusPublisher
                 .setFailureType(to: NetworkError.self)
-                .timeout(.seconds(requestTimeout), scheduler: DispatchQueue.global(), customError: { NetworkError.connectionFailed })
-                .sink(receiveCompletion: { [weak self] completion in
-                    guard let self = self else { return }
-                    guard !isResumed else { return } // Ensure continuation is only resumed once
-                    isResumed = true
-                    cancellable?.cancel() // Cancel the subscription to prevent further events
-
-                    if case .failure(let error) = completion {
-                        self.logger.debug("Connection failed with error: \(error).")
-                        continuation.resume(throwing: error) // Timeout or connection failure
-                    }
-                }, receiveValue: { [weak self] status in
-                    guard let self = self else { return }
-                    guard !isResumed else { return } // Ensure continuation is only resumed once
-                    if status == .connected {
-                        self.logger.debug("Connection succeeded.")
-                        isResumed = true
-                        cancellable?.cancel() // Cancel the subscription to prevent further events
-                        self.syncQueue.async { [weak self] in
-                            guard let self = self else { return }
-                            self.isConnecting = false
-                        }
-                        continuation.resume() // Successfully connected
-                    } else if status == .disconnected {
-                        attempts += 1
-                        self.logger.debug("Disconnection observed, incrementing attempts to \(attempts)")
-
-                        if attempts >= maxAttempts {
-                            self.logger.debug("Max attempts reached. Failing with connection error.")
-                            isResumed = true
-                            cancellable?.cancel() // Cancel the subscription to prevent further events
-                            self.syncQueue.async { [weak self] in
-                                guard let self = self else { return }
-                                self.isConnecting = false
-                                self.handleFailedConnectionAndReconnectIfNeeded() // Trigger reconnection
-                            }
-                            self.logger.debug("Will throw an error \(NetworkError.connectionFailed)")
-                            continuation.resume(throwing: NetworkError.connectionFailed)
-                        }
-                    }
+                .timeout(.seconds(requestTimeout), scheduler: DispatchQueue.global(), customError: {
+                    self.logger.debug("Timeout triggered, returning NetworkError.connectionFailed.")
+                    return NetworkError.connectionFailed
                 })
+                .sink(
+                    receiveCompletion: { completion in
+                        self.logger.debug("Received completion: \(completion)")
+                        if case .failure(let error) = completion {
+                            self.logger.debug("Connection failed with error: \(error).")
+                            fail(with: error)
+                        }
+                    },
+                    receiveValue: { status in
+                        self.logger.debug("Received value (status): \(status)")
+                        switch status {
+                        case .connected:
+                            self.logger.debug("Connection succeeded.")
+                            succeed()
 
-            // Store cancellable to keep it alive
-            self.publishers.insert(cancellable!)
+                        case .disconnected:
+                            attempts += 1
+                            self.logger.debug("Disconnection observed, incrementing attempts to \(attempts)")
+                            if attempts >= maxAttempts {
+                                handleMaxAttemptsReached()
+                            }
+                        }
+                    }
+                )
+
+            if let c = cancellable {
+                self.publishers.insert(c)
+            }
         }
     }
 

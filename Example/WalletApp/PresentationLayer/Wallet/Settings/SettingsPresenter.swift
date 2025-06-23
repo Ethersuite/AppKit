@@ -6,18 +6,23 @@ import ReownWalletKit
 final class SettingsPresenter: ObservableObject {
 
     private let interactor: SettingsInteractor
+    private let importAccount: ImportAccount
     private let router: SettingsRouter
     private let accountStorage: AccountStorage
-    
     private var disposeBag = Set<AnyCancellable>()
+    @Published var smartAccountSafe: String = "Loading..."
 
-    init(interactor: SettingsInteractor, router: SettingsRouter, accountStorage: AccountStorage) {
+    init(interactor: SettingsInteractor, router: SettingsRouter, accountStorage: AccountStorage, importAccount: ImportAccount) {
         defer { setupInitialState() }
         self.interactor = interactor
         self.router = router
         self.accountStorage = accountStorage
+        self.importAccount = importAccount
     }
 
+    func enableChainAbstraction(_ enable: Bool) {
+        WalletKitEnabler.shared.isChainAbstractionEnabled = enable
+    }
 
     var account: String {
         guard let importAccount = accountStorage.importAccount else { return .empty }

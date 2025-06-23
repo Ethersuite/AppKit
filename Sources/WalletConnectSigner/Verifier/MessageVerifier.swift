@@ -1,17 +1,31 @@
 import Foundation
+import YttriumWrapper
 
 public struct MessageVerifier {
 
-    enum Errors: Error {
+    enum Errors: LocalizedError {
         case utf8EncodingFailed
+        case verificationFailed(message: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .utf8EncodingFailed:
+                return "Failed to encode string using UTF-8."
+            case .verificationFailed(let message):
+                return "Verification failed: \(message)"
+            }
+        }
     }
 
-    private let eip191Verifier: EIP191Verifier
-    private let eip1271Verifier: EIP1271Verifier
+    private let crypto: CryptoProvider
+    private let projectId: String
 
-    init(eip191Verifier: EIP191Verifier, eip1271Verifier: EIP1271Verifier) {
-        self.eip191Verifier = eip191Verifier
-        self.eip1271Verifier = eip1271Verifier
+    init(
+        crypto: CryptoProvider,
+        projectId: String
+    ) {
+        self.crypto = crypto
+        self.projectId = projectId
     }
 
     public func verify(signature: CacaoSignature,
@@ -31,28 +45,7 @@ public struct MessageVerifier {
                        address: String,
                        chainId: String
     ) async throws {
-
-        guard let messageData = message.data(using: .utf8) else {
-            throw Errors.utf8EncodingFailed
-        }
-
-        let signatureData = Data(hex: signature.s)
-
-        switch signature.t {
-        case .eip191:
-            return try await eip191Verifier.verify(
-                signature: signatureData,
-                message: messageData.prefixed,
-                address: address
-            )
-        case .eip1271:
-            return try await eip1271Verifier.verify(
-                signature: signatureData,
-                message: messageData.prefixed,
-                address: address,
-                chainId: chainId
-            )
-        }
+        try await verifySignature(signature.s, message: message, address: address, chainId: chainId)
     }
 
     public func verify(signature: String,
@@ -60,28 +53,38 @@ public struct MessageVerifier {
                        address: String,
                        chainId: String
     ) async throws {
+        try await verifySignature(signature, message: message, address: address, chainId: chainId)
+    }
 
+    // Private helper method containing the common logic
+    private func verifySignature(_ signatureString: String,
+                                 message: String,
+                                 address: String,
+                                 chainId: String
+    ) async throws {
         guard let messageData = message.data(using: .utf8) else {
             throw Errors.utf8EncodingFailed
         }
-        let signatureData = Data(hex: signature)
-
         let prefixedMessage = messageData.prefixed
 
+        let rpcUrl = "https://rpc.walletconnect.com/v1?chainId=\(chainId)&projectId=\(projectId)"
+        let erc6492Client = Erc6492Client(rpcUrl: rpcUrl)
+        let messageHash = crypto.keccak256(prefixedMessage)
+
         do {
-            try await eip191Verifier.verify(
-                signature: signatureData,
-                message: prefixedMessage,
-                address: address
-            )
-        } catch {
-            // If eip191 verification fails, try eip1271 verification
-            try await eip1271Verifier.verify(
-                signature: signatureData,
-                message: prefixedMessage,
+            let result = try await erc6492Client.verifySignature(
+                signature: signatureString,
                 address: address,
-                chainId: chainId
+                messageHash: messageHash.toHexString()
             )
+
+            if result == true {
+                return
+            } else {
+                throw Errors.verificationFailed(message: "Signature verification failed.")
+            }
+        } catch {
+            throw error
         }
     }
 }

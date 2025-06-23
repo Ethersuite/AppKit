@@ -22,8 +22,8 @@ final class MainRouter {
             .wrapToNavigationController()
     }
 
-    func settingsViewController() -> UIViewController {
-        return SettingsModule.create(app: app)
+    func settingsViewController(importAccount: ImportAccount) -> UIViewController {
+        return SettingsModule.create(app: app, importAccount: importAccount)
             .wrapToNavigationController()
     }
     
@@ -41,6 +41,20 @@ final class MainRouter {
         AuthRequestModule.create(app: app, request: request, importAccount: importAccount, context: context)
             .presentFullScreen(from: viewController, transparentBackground: true)
     }
+
+    func presentCATransaction(
+        sessionRequest: Request,
+        importAccount: ImportAccount,
+        context: VerifyContext?,
+        call: Call,
+        from: String,
+        chainId: Blockchain,
+        uiFields: UiFields
+    ) {
+
+        CATransactionModule.create(app: app, sessionRequest: sessionRequest, importAccount: importAccount, call: call, from: from, chainId: chainId, uiFields: uiFields)
+                .present(from: viewController)
+        }
 
     func dismiss() {
         viewController.dismiss()

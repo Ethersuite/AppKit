@@ -56,7 +56,7 @@ actor WalletPairService {
         }
         eventsClient.saveTraceEvent(PairingExecutionTraceEvents.subscribingPairingTopic)
         do {
-            try await networkingInteractor.subscribe(topic: pairing.topic)
+            try await networkingInteractor.subscribe(topic: pairing.topic, connectUnconditionally: true)
         } catch {
             logger.debug("Failed to subscribe to topic: \(pairing.topic)")
             eventsClient.saveTraceEvent(PairingTraceErrorEvents.subscribePairingTopicFailure)
@@ -106,7 +106,7 @@ extension WalletPairService {
 extension WalletPairService.Errors: LocalizedError {
     var errorDescription: String? {
         switch self {
-        case .noPendingRequestsForPairing(let topic):   return "No pending requests for pairing, topic: \(topic)"
+        case .noPendingRequestsForPairing(let topic):   return "No pending requests for pairing, topic: \(topic), Please try again with a new connection URI."
         case .networkNotConnected:              return "Pairing failed. You seem to be offline"
         }
     }

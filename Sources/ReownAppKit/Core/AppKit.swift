@@ -63,6 +63,7 @@ public class AppKit {
 
         let includeWebWallets: Bool
         let recommendedWalletIds: [String]
+        let includedWalletIds: [String]
         let excludedWalletIds: [String]
         let customWallets: [Wallet]
         let coinbaseEnabled: Bool
@@ -88,6 +89,7 @@ public class AppKit {
         authRequestParams: AuthRequestParams?,
         includeWebWallets: Bool = true,
         recommendedWalletIds: [String] = [],
+        includedWalletIds: [String] = [],
         excludedWalletIds: [String] = [],
         customWallets: [Wallet] = [],
         coinbaseEnabled: Bool = true,
@@ -103,6 +105,7 @@ public class AppKit {
             authRequestParams: authRequestParams,
             includeWebWallets: includeWebWallets,
             recommendedWalletIds: recommendedWalletIds,
+            includedWalletIds: includedWalletIds,
             excludedWalletIds: excludedWalletIds,
             customWallets: customWallets,
             coinbaseEnabled: coinbaseEnabled,
@@ -134,7 +137,7 @@ public class AppKit {
             supportsAuthenticatedSession: (config.authRequestParams != nil)
         )
         
-        Task {
+        Task(priority: .background) {
             try? await w3mApiInteractor.fetchWalletImages(for: store.recentWallets + store.customWallets)
             try? await w3mApiInteractor.fetchAllWalletMetadata()
             try? await w3mApiInteractor.fetchFeaturedWallets()

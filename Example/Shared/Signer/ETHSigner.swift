@@ -39,22 +39,40 @@ struct ETHSigner {
         return AnyCodable(result)
     }
 
+    func signHash(_ hashToSign: String) throws -> String {
+
+        let dataToSign: Bytes
+        if hashToSign.hasPrefix("0x") {
+            // Hex-encoded message, remove "0x" and convert
+            let messageData = Data(hex: String(hashToSign.dropFirst(2)))
+            dataToSign = messageData.bytes
+        } else {
+            // Plain text message, convert directly to data
+            let messageData = Data(hashToSign.utf8)
+            dataToSign = messageData.bytes
+        }
+
+        let (v, r, s) = try! privateKey.sign(hash: dataToSign)
+        let result = "0x" + r.toHexString() + s.toHexString() + String(v + 27, radix: 16)
+        return result
+    }
+
     func signTypedData(_ params: AnyCodable) -> AnyCodable {
         let result = "0x4355c47d63924e8a72e509b65029052eb6c299d53a04e167c5775fd466751c9d07299936d304c153f6443dfa05f40ff007d72911b6f72307f996231605b915621c"
         return AnyCodable(result)
     }
 
     func sendTransaction(_ params: AnyCodable) throws -> AnyCodable {
-        let params = try params.get([EthereumTransaction].self)
-        var transaction = params[0]
-        transaction.gas = EthereumQuantity(quantity: BigUInt("1234"))
-        transaction.nonce = EthereumQuantity(quantity: BigUInt("0"))
-        transaction.gasPrice = EthereumQuantity(quantity: BigUInt(0))
-        print(transaction.description)
-        let signedTx = try transaction.sign(with: self.privateKey, chainId: 4)
-        let (r, s, v) = (signedTx.r, signedTx.s, signedTx.v)
-        let result = r.hex() + s.hex().dropFirst(2) + String(v.quantity, radix: 16)
-        return AnyCodable(result)
+//        let params = try params.get([Tx].self)
+//        var transaction = params[0]
+//        transaction.gas = EthereumQuantity(quantity: BigUInt("1234"))
+//        transaction.nonce = EthereumQuantity(quantity: BigUInt("0"))
+//        transaction.gasPrice = EthereumQuantity(quantity: BigUInt(0))
+//        print(transaction.description)
+//        let signedTx = try transaction.sign(with: self.privateKey, chainId: 4)
+//        let (r, s, v) = (signedTx.r, signedTx.s, signedTx.v)
+//        let result = r.hex() + s.hex().dropFirst(2) + String(v.quantity, radix: 16)
+        return AnyCodable("0xabcd12340000000000000000000000111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000f0")
     }
 
     private func dataToHash(_ data: Data) -> Bytes {

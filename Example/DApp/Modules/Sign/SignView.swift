@@ -30,6 +30,7 @@ struct SignView: View {
                                         .background(Color(red: 95/255, green: 159/255, blue: 248/255))
                                         .cornerRadius(16)
                                 }
+                                .accessibilityIdentifier("oneClickAuthWithLinkModeButton")
 
                                 Button {
                                     presenter.connectWalletWithW3M()
@@ -84,7 +85,7 @@ struct SignView: View {
                         .padding(12)
                     } else {
                         VStack {
-                            ForEach(presenter.accountsDetails, id: \.chain) { account in
+                            ForEach(presenter.accountsDetails, id: \.account) { account in
                                 Button {
                                     presenter.presentSessionAccount(sessionAccount: account)
                                 } label: {

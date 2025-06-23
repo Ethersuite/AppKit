@@ -55,6 +55,8 @@ public final class RelayClient {
     private let rpcHistory: RPCHistory
     private let logger: ConsoleLogging
     private let subscriptionsTracker: SubscriptionsTracking
+    private let topicsTracker: TopicsTracking
+
 
     private let concurrentQueue = DispatchQueue(label: "com.walletconnect.sdk.relay_client", qos: .utility, attributes: .concurrent)
 
@@ -70,13 +72,15 @@ public final class RelayClient {
         logger: ConsoleLogging,
         rpcHistory: RPCHistory,
         clientIdStorage: ClientIdStoring,
-        subscriptionsTracker: SubscriptionsTracking
+        subscriptionsTracker: SubscriptionsTracking,
+        topicsTracker: TopicsTracking
     ) {
         self.logger = logger
         self.dispatcher = dispatcher
         self.rpcHistory = rpcHistory
         self.clientIdStorage = clientIdStorage
         self.subscriptionsTracker = subscriptionsTracker
+        self.topicsTracker = topicsTracker
         setUpBindings()
         setupConnectionSubscriptions()
     }
@@ -92,7 +96,7 @@ public final class RelayClient {
             .sink { [weak self] status in
                 guard let self = self else { return }
                 guard status == .connected else { return }
-                let topics = self.subscriptionsTracker.getTopics()
+                let topics = self.topicsTracker.getAllTopics()
                 Task(priority: .high) {
                     try await self.batchSubscribe(topics: topics)
                 }
@@ -119,19 +123,19 @@ public final class RelayClient {
     }
 
     /// Completes with an acknowledgement from the relay network
-    public func publish(topic: String, payload: String, tag: Int, prompt: Bool, ttl: Int) async throws {
+    public func publish(topic: String, payload: String, tag: Int, prompt: Bool, ttl: Int, tvfData: TVFData?, coorelationId: RPCID?) async throws {
         #if DEBUG
         if blockPublishing {
             logger.debug("[Publish] Publishing is blocked")
             return
         }
         #endif
-        let request = Publish(params: .init(topic: topic, message: payload, ttl: ttl, prompt: prompt, tag: tag)).asRPCRequest()
+        let request = Publish(params: .init(topic: topic, message: payload, ttl: ttl, prompt: prompt, tag: tag, correlationId: coorelationId, tvfData: tvfData)).asRPCRequest()
         let message = try request.asJSONEncodedString()
         
         logger.debug("[Publish] Sending payload on topic: \(topic)")
 
-        try await dispatcher.protectedSend(message)
+        try await dispatcher.protectedSend(message, connectUnconditionally: true)
 
         return try await withUnsafeThrowingContinuation { continuation in
             var cancellable: AnyCancellable?
@@ -155,25 +159,91 @@ public final class RelayClient {
         }
     }
 
-    public func subscribe(topic: String) async throws {
-        logger.debug("Subscribing to topic: \(topic)")
+    public func subscribe(topic: String, connectUnconditionally: Bool = false) async throws {
+        topicsTracker.addTopics([topic])
+        logger.debug("[Subscribe] Subscribing to topic: \(topic)")
+
         let rpc = Subscribe(params: .init(topic: topic))
-        let request = rpc
-            .asRPCRequest()
-        let message = try! request.asJSONEncodedString()
-        try await dispatcher.protectedSend(message)
-        observeSubscription(requestId: request.id!, topics: [topic])
+        let request = rpc.asRPCRequest()
+        let message = try request.asJSONEncodedString()
+
+        try await dispatcher.protectedSend(message, connectUnconditionally: connectUnconditionally)
+
+        // Wait for relay's subscription response
+        try await waitForSubscriptionResponse(
+            requestId: request.id!,
+            topics: [topic],
+            logPrefix: "[Subscribe]"
+        )
     }
 
     public func batchSubscribe(topics: [String]) async throws {
+        topicsTracker.addTopics(topics)
+
         guard !topics.isEmpty else { return }
-        logger.debug("Subscribing to topics: \(topics)")
+        logger.debug("[BatchSubscribe] Subscribing to topics: \(topics)")
+
         let rpc = BatchSubscribe(params: .init(topics: topics))
-        let request = rpc
-            .asRPCRequest()
-        let message = try! request.asJSONEncodedString()
+        let request = rpc.asRPCRequest()
+        let message = try request.asJSONEncodedString()
+
         try await dispatcher.protectedSend(message)
-        observeSubscription(requestId: request.id!, topics: topics)
+
+        // Same wait, but for multiple topics
+        try await waitForSubscriptionResponse(
+            requestId: request.id!,
+            topics: topics,
+            logPrefix: "[BatchSubscribe]"
+        )
+    }
+
+    private func waitForSubscriptionResponse(
+        requestId: RPCID,
+        topics: [String],
+        logPrefix: String
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var cancellable: AnyCancellable?
+
+            cancellable = subscriptionResponsePublisher
+                // Only handle responses matching this request ID
+                .filter { $0.0 == requestId }
+                // Convert Never to RelayError so we can throw on timeout
+                .setFailureType(to: RelayError.self)
+                // Enforce a 30-second timeout
+                .timeout(.seconds(30), scheduler: concurrentQueue, customError: { .requestTimeout })
+                .sink(
+                    receiveCompletion: { [unowned self] completion in
+                        switch completion {
+                        case .failure(let error):
+                            cancellable?.cancel()
+                            logger.debug("\(logPrefix) Relay request timeout for topics: \(topics)")
+                            continuation.resume(throwing: error)
+                        case .finished:
+                            // Not typically called in this pattern, but required by Combine
+                            break
+                        }
+                    },
+                    receiveValue: { [unowned self] (_, subscriptionIds) in
+                        cancellable?.cancel()
+                        logger.debug("\(logPrefix) Subscribed to topics: \(topics)")
+
+                        // Check ID counts, warn if mismatch
+                        guard topics.count == subscriptionIds.count else {
+                            logger.warn("\(logPrefix) Number of returned subscription IDs != number of topics")
+                            continuation.resume(returning: ())
+                            return
+                        }
+
+                        // Track each subscription
+                        for (i, topic) in topics.enumerated() {
+                            subscriptionsTracker.setSubscription(for: topic, id: subscriptionIds[i])
+                        }
+
+                        continuation.resume(returning: ())
+                    }
+                )
+        }
     }
 
     public func unsubscribe(topic: String) async throws {
@@ -214,31 +284,18 @@ public final class RelayClient {
                 completion?(error)
             } else {
                 self?.subscriptionsTracker.removeSubscription(for: topic)
+                self?.topicsTracker.removeTopics([topic])
                 completion?(nil)
             }
         }
     }
 
-
-    private func observeSubscription(requestId: RPCID, topics: [String]) {
-        var cancellable: AnyCancellable?
-        cancellable = subscriptionResponsePublisher
-            .filter { $0.0 == requestId }
-            .sink { [unowned self] (_, subscriptionIds) in
-                cancellable?.cancel()
-                logger.debug("Subscribed to topics: \(topics)")
-                guard topics.count == subscriptionIds.count else {
-                    logger.warn("Number of topics in (batch)subscribe does not match number of subscriptions")
-                    return
-                }
-                for i in 0..<topics.count {
-                    subscriptionsTracker.setSubscription(for: topics[i], id: subscriptionIds[i])
-                }
-            }
-    }
-
     public func getClientId() throws -> String {
         try clientIdStorage.getClientId()
+    }
+    
+    public func trackTopics(_ topics: [String]) {
+        topicsTracker.addTopics(topics)
     }
 
     // FIXME: Parse data to string once before trying to decode -> respond error on fail

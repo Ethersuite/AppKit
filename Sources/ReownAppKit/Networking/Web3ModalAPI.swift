@@ -7,8 +7,8 @@ enum Web3ModalAPI: HTTPService {
         let search: String?
         let projectId: String
         let metadata: AppMetadata
-        let recommendedIds: [String]
-        let excludedIds: [String]
+        let include: [String]
+        let exclude: [String]
     }
     
     struct GetIosDataParams {
@@ -44,8 +44,8 @@ enum Web3ModalAPI: HTTPService {
                 "page": "\(params.page)",
                 "entries": "\(params.entries)",
                 "search": params.search ?? "",
-                "recommendedIds": params.recommendedIds.joined(separator: ","),
-                "excludedIds": params.excludedIds.joined(separator: ","),
+                "exclude": params.exclude.joined(separator: ","),
+                "include": params.include.joined(separator: ","),
                 "platform": "ios",
             ]
             .compactMapValues { value in

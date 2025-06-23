@@ -52,9 +52,14 @@ final class SessionAccountPresenter: ObservableObject {
                     try await Sign.instance.request(params: request)
                     lastRequest = request
                     ActivityIndicatorManager.shared.stop()
-                    requesting = true
-                    DispatchQueue.main.async { [weak self] in
-                        self?.openWallet()
+                    
+                    let requestId = request.id
+                    let sessionTopic = session.topic
+                    
+                    await MainActor.run { [weak self] in
+                        guard let self = self else { return }
+                        self.requesting = true
+                        self.openWallet(requstId: requestId, topic: sessionTopic)
                     }
                 } catch {
                     ActivityIndicatorManager.shared.stop()
@@ -70,7 +75,7 @@ final class SessionAccountPresenter: ObservableObject {
     }
     
     func copyUri() {
-        UIPasteboard.general.string = sessionAccount.account
+        UIPasteboard.general.string = sessionAccount.address
     }
 }
 
@@ -89,7 +94,7 @@ extension SessionAccountPresenter {
     private func getRequest(for method: String) throws -> AnyCodable {
         let account = session.namespaces.first!.value.accounts.first!.address
         if method == "eth_sendTransaction" {
-            let tx = Stub.tx
+            let tx = Stub.tx(from: account)
             return AnyCodable(tx)
         } else if method == "personal_sign" {
             return AnyCodable(["0x4d7920656d61696c206973206a6f686e40646f652e636f6d202d2031363533333933373535313531", account])
@@ -104,12 +109,39 @@ extension SessionAccountPresenter {
         showResponse.toggle()
     }
     
-    private func openWallet() {
-        if let nativeUri = session.peer.redirect?.native {
-            UIApplication.shared.open(URL(string: "\(nativeUri)wc?requestSent")!)
-        } else {
-            showRequestSent.toggle()
+    private func openWallet(requstId: RPCID, topic: String) {
+        // Use the documentation format for HTTP-based redirect links:
+        // {YOUR_WALLET_URL}/wc?requestId={requestId}&sessionTopic={session.Topic}
+        
+        let redirectUrl = session.peer.redirect?.native ?? session.peer.redirect?.universal
+        
+        if let redirectUrl = redirectUrl {
+            var plainAppUrl = redirectUrl
+            
+            if plainAppUrl.hasPrefix("http://") || plainAppUrl.hasPrefix("https://") {
+                // HTTP-based URL - use documentation format with parameters
+                if plainAppUrl.hasSuffix("/") {
+                    plainAppUrl = String(plainAppUrl.dropLast())
+                }
+                // Only add /wc if it's not already there
+                let wcPath = plainAppUrl.hasSuffix("/wc") ? "" : "/wc"
+                let urlString = "\(plainAppUrl)\(wcPath)?requestId=\(requstId.string)&sessionTopic=\(topic)"
+                
+                if let url = URL(string: urlString) {
+                    UIApplication.shared.open(url)
+                    return
+                }
+            } else {
+                // Custom scheme URL - use simple format without extra parameters
+                if let url = URL(string: redirectUrl) {
+                    UIApplication.shared.open(url)
+                    return
+                }
+            }
         }
+        
+        // Final fallback if URL construction fails
+        showRequestSent.toggle()
     }
 }
 
@@ -128,17 +160,27 @@ extension SessionAccountPresenter.Errors: LocalizedError {
 // MARK: - Transaction Stub
 private enum Stub {
     struct Transaction: Codable {
-        let from, to, data, gas: String
+        let from, to, data, gasLimit: String
         let gasPrice, value, nonce: String
     }
     
     static let tx = [Transaction(from: "0x9b2055d370f73ec7d8a03e965129118dc8f5bf83",
                                 to: "0x9b2055d370f73ec7d8a03e965129118dc8f5bf83",
-                                data: "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675",
-                                gas: "0x76c0",
-                                gasPrice: "0x9184e72a000",
-                                value: "0x9184e72a",
-                                nonce: "0x117")]
+                                data: "0x",
+                                gasLimit: "0x5208",
+                                gasPrice: "0x013e3d2ed4",
+                                value: "0x00",
+                                nonce: "0x09")]
+
+    static func tx(from: String) -> [Transaction] {
+        return [Transaction(from: from,
+                            to: "0x9b2055d370f73ec7d8a03e965129118dc8f5bf83",
+                            data: "0x",
+                            gasLimit: "0x5208",
+                            gasPrice: "0x013e3d2ed4",
+                            value: "0x186A0",
+                            nonce: "0x09")]
+    }
     static let eth_signTypedData = """
 {
 "types": {
