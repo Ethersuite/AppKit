@@ -150,19 +150,22 @@ class Web3ModalViewModel: ObservableObject {
     }
 
     private func handleNewSession(session: Session) {
-        store.connectedWith = .wc
-        store.account = .init(from: session)
-        store.session = session
+        // Only update the store session if we don't have a primary session set
+        // This prevents dApp connections from overwriting the main wallet session
+        if !AppKit.hasPrimarySession {
+            store.connectedWith = .wc
+            store.account = .init(from: session)
+            store.session = session
 
-        if
-            let blockchain = session.accounts.first?.blockchain,
-            let matchingChain = ChainPresets.ethChains.first(where: { $0.chainNamespace == blockchain.namespace && $0.chainReference == blockchain.reference })
-        {
-            store.selectedChain = matchingChain
+            if
+                let blockchain = session.accounts.first?.blockchain,
+                let matchingChain = ChainPresets.ethChains.first(where: { $0.chainNamespace == blockchain.namespace && $0.chainReference == blockchain.reference })
+            {
+                store.selectedChain = matchingChain
+            }
+
+            fetchIdentity()
         }
-
-        fetchIdentity()
-
     }
 
     private func routeToProfile() {
