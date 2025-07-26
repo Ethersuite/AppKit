@@ -154,8 +154,11 @@ class Web3ModalViewModel: ObservableObject {
         store.account = .init(from: session)
         store.session = session
         
-        // Set this session as the primary session
-        AppKit.primarySessionTopic = session.topic
+        // Only set as primary session if we don't already have one
+        // This ensures the first wallet connection remains primary
+        if AppKit.primarySessionTopic == nil {
+            AppKit.primarySessionTopic = session.topic
+        }
 
         if
             let blockchain = session.accounts.first?.blockchain,
