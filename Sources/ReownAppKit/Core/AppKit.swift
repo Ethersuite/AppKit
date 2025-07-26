@@ -81,6 +81,24 @@ public class AppKit {
 
     private init() {}
 
+    /// Updates the primary session by re-initializing the store with the specified session
+    /// - Parameter topic: The session topic to set as primary. If nil or if the session doesn't exist, the method returns without changes.
+    /// - Note: This method allows apps to programmatically select which session should be the active one,
+    ///         useful for apps that manage multiple wallet connections and need to ensure a specific session
+    ///         is treated as the primary wallet connection regardless of session ordering.
+    public static func updatePrimarySession(_ topic: String?) {
+        guard let topic = topic else { return }
+        
+        // Find the session with the specified topic
+        guard let session = instance.getSessions().first(where: { $0.topic == topic }) else { return }
+        
+        // Re-initialize the store with this session
+        let store = Store.shared
+        store.session = session
+        store.connectedWith = .wc
+        store.account = .init(from: session)
+    }
+
     /// Wallet instance wallet config method.
     /// - Parameters:
     ///   - metadata: App metadata
