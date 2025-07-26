@@ -91,6 +91,21 @@ public class AppKit {
     private(set) static var viewModel: Web3ModalViewModel!
 
     private init() {}
+    
+    /// Updates the primary session topic if a valid topic is provided
+    /// - Parameter topic: The session topic to set as primary. If nil, the method returns without changes.
+    /// - Note: Only updates if the topic exists in current sessions and differs from the current primary topic
+    public static func updatePrimarySessionTopic(_ topic: String?) {
+        guard let topic = topic else { return }
+        
+        // Only update if it's different from current primary topic
+        guard topic != primarySessionTopic else { return }
+        
+        // Verify the topic exists in current sessions
+        if instance.getSessions().contains(where: { $0.topic == topic }) {
+            primarySessionTopic = topic
+        }
+    }
 
     /// Wallet instance wallet config method.
     /// - Parameters:
