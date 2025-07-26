@@ -19,6 +19,12 @@ import UIKit
 /// AppKit.instance.getSessions()
 /// ```
 public class AppKit {
+    /// Primary session topic to maintain the main wallet connection
+    private static var primarySessionTopic: String? {
+        get { UserDefaults.standard.string(forKey: "appkit.primarySessionTopic") }
+        set { UserDefaults.standard.set(newValue, forKey: "appkit.primarySessionTopic") }
+    }
+
     /// AppKit client instance
     public static var instance: AppKitClient = {
         guard let config = AppKit.config else {
@@ -34,7 +40,12 @@ public class AppKit {
         
         let store = Store.shared
         
-        if let session = client.getSessions().first {
+        // Try to find primary session first, then fall back to first session
+        let session = primarySessionTopic != nil
+            ? client.getSessions().first(where: { $0.topic == primarySessionTopic })
+            : client.getSessions().first
+
+        if let session = session {
             store.session = session
             store.connectedWith = .wc
             store.account = .init(from: session)
@@ -81,6 +92,11 @@ public class AppKit {
 
     private init() {}
 
+    /// Checks if a primary session has been set
+    internal static var hasPrimarySession: Bool {
+        return primarySessionTopic != nil
+    }
+
     /// Updates the primary session by re-initializing the store with the specified session
     /// - Parameter topic: The session topic to set as primary. If nil or if the session doesn't exist, the method returns without changes.
     /// - Note: This method allows apps to programmatically select which session should be the active one,
@@ -92,7 +108,8 @@ public class AppKit {
         // Find the session with the specified topic
         guard let session = instance.getSessions().first(where: { $0.topic == topic }) else { return }
         
-        // Re-initialize the store with this session
+        // Set as primary session and re-initialize the store
+        primarySessionTopic = topic
         let store = Store.shared
         store.session = session
         store.connectedWith = .wc
