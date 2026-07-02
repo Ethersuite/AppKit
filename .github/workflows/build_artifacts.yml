@@ -11,17 +11,26 @@ on:
         description: 'WalletConnect project id'
         required: true
   push:
-    branches: 
+    branches:
       - main
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
-  build:    
+  build:
     runs-on: macos-latest-xlarge
     timeout-minutes: 15
 
     steps:
     - uses: actions/checkout@v3
-    
+
+    - name: Select Xcode 26 (iOS 26 SDK)
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '26'
+
     - uses: actions/cache@v3
       with:
         path: |
@@ -31,12 +40,17 @@ jobs:
     - name: Build for testing on workflow_dispatch
       if: ${{ github.event_name == 'workflow_dispatch' }}
       shell: bash
-      run: make build_all RELAY_HOST=${{ inputs.relay-endpoint }} PROJECT_ID=${{ inputs.project-id }}
+      env:
+        RELAY_HOST: ${{ inputs.relay-endpoint }}
+        PROJECT_ID: ${{ inputs.project-id }}
+      run: make build_all RELAY_HOST="$RELAY_HOST" PROJECT_ID="$PROJECT_ID"
 
     - name: Build for testing on push
       if: ${{ github.event_name == 'push' }}
       shell: bash
-      run: make build_all RELAY_HOST=relay.walletconnect.com PROJECT_ID=${{ secrets.PROJECT_ID }}
+      env:
+        PROJECT_ID: ${{ secrets.PROJECT_ID }}
+      run: make build_all RELAY_HOST=relay.walletconnect.com PROJECT_ID="$PROJECT_ID"
 
     - name: Tar DerivedDataCache
       shell: bash
@@ -47,7 +61,7 @@ jobs:
         name: main-derivedData
         path: products.tar
         if-no-files-found: error
-    
+
     # Slack notification for failing smoke and relay tests
     - name: Slack Notification for Failure
       if: failure()

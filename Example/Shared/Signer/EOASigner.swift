@@ -12,14 +12,12 @@ final class EOASigner {
         case "personal_sign":
             return signer.personalSign(request.params)
 
-        case "eth_signTypedData":
-            return signer.signTypedData(request.params)
+        case "eth_signTypedData", "eth_signTypedData_v4":
+            let signature = try await signer.signTypedData(request.params)
+            return AnyCodable(signature)
 
         case "eth_sendTransaction":
             return try signer.sendTransaction(request.params)
-
-        case "solana_signTransaction":
-            return SOLSigner.signTransaction(request.params)
 
         default:
             // If something is not supported, throw an error or handle it

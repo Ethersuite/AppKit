@@ -12,35 +12,37 @@ import UIKit
 /// Access via `Web3Modal.instance`
 public class AppKitClient {
     // MARK: - Public Properties
-    
+
     /// Publisher that sends sessions on every sessions update
     ///
     /// Event will be emited on controller and non-controller clients.
     public var sessionsPublisher: AnyPublisher<[Session], Never> {
         signClient.sessionsPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends session when one is settled
     ///
     /// Event is emited on proposer and responder client when both communicating peers have successfully established a session.
     public var sessionSettlePublisher: AnyPublisher<Session, Never> {
-        signClient.sessionSettlePublisher.eraseToAnyPublisher()
+        signClient.sessionSettlePublisher
+            .map(\.session)
+            .eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends session proposal that has been rejected
     ///
     /// Event will be emited on dApp client only.
     public var sessionRejectionPublisher: AnyPublisher<(Session.Proposal, Reason), Never> {
         signClient.sessionRejectionPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends deleted session topic
     ///
     /// Event can be emited on any type of the client.
     public var sessionDeletePublisher: AnyPublisher<(String, Reason), Never> {
         signClient.sessionDeletePublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends response for session request
     ///
     /// In most cases that event will be emited on dApp client.
@@ -57,14 +59,14 @@ public class AppKitClient {
             .merge(with: coinbaseResponseSubject)
             .eraseToAnyPublisher()
     }
-    
+
     public var coinbaseResponseSubject = PassthroughSubject<W3MResponse, Never>()
-    
+
     /// Publisher that sends web socket connection status
     public var socketConnectionStatusPublisher: AnyPublisher<SocketConnectionStatus, Never> {
         signClient.socketConnectionStatusPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends session event
     ///
     /// Event will be emited on dApp client only
@@ -110,7 +112,7 @@ public class AppKitClient {
         setUpConnectionEvents()
         analyticsService.track(.MODAL_LOADED)
     }
-    
+
     /// For creating new pairing
     public func createPairing() async throws -> WalletConnectURI {
         logger.debug("Creating new pairing")
@@ -121,7 +123,7 @@ public class AppKitClient {
             throw error
         }
     }
-    
+
     /// For proposing a session to a wallet.
     /// Function will propose a session on existing pairing or create new one if not specified
     /// Namespaces from Web3Modal.config will be used
@@ -145,7 +147,7 @@ public class AppKitClient {
             throw error
         }
     }
-    
+
     public func request(_ request: W3MJSONRPC) async throws {
         logger.debug("Requesting: \(request.rawValues.method)")
         switch store.connectedWith {
@@ -155,7 +157,7 @@ public class AppKitClient {
                 let chain = getSelectedChain(),
                 let blockchain = Blockchain(namespace: chain.chainNamespace, reference: chain.chainReference)
             else { return }
-            
+
             if case let .personal_sign(address, message) = request {
                 try await signClient.request(
                     params: .init(
@@ -176,9 +178,9 @@ public class AppKitClient {
                 )
             }
         case .cb:
-                    
+
             guard let jsonRpc = request.toCbAction() else { return }
-                    
+
             // Execute on main as Coinbase SDK is not dispatching on main when calling UIApplication.openUrl()
             DispatchQueue.main.async {
                 CoinbaseWalletSDK.shared.makeRequest(
@@ -191,7 +193,7 @@ public class AppKitClient {
                     let response: W3MResponse
                     switch result {
                     case let .success(payload):
-                        
+
                         switch payload.content.first {
                         case let .success(JSONString):
                             response = .init(result: .response(AnyCodable(JSONString)))
@@ -202,14 +204,14 @@ public class AppKitClient {
                         }
                     case let .failure(error):
                         AppKit.config.onError(error)
-                        
+
                         if let cbError = error as? ActionError {
                             response = .init(result: .error(.init(code: cbError.code, message: cbError.message)))
                         } else {
                             response = .init(result: .error(.init(code: -1, message: error.localizedDescription)))
                         }
                     }
-                    
+
                     self.coinbaseResponseSubject.send(response)
                 }
             }
@@ -217,7 +219,7 @@ public class AppKitClient {
             break
         }
     }
-    
+
     /// For sending JSON-RPC requests to wallet.
     /// - Parameters:
     ///   - params: Parameters defining request and related session
@@ -229,7 +231,7 @@ public class AppKitClient {
             throw error
         }
     }
-    
+
     /// For a terminating a session
     ///
     /// Should Error:
@@ -271,13 +273,13 @@ public class AppKitClient {
     public func getSessions() -> [Session] {
         signClient.getSessions()
     }
-    
+
     /// Query pairings
     /// - Returns: All pairings
     public func getPairings() -> [Pairing] {
         pairingClient.getPairings()
     }
-    
+
     /// Delete all stored data such as: pairings, sessions, keys
     ///
     /// - Note: Will unsubscribe from all topics
@@ -289,41 +291,41 @@ public class AppKitClient {
             throw error
         }
     }
-    
+
     public func getAddress() -> String? {
         guard let account = store.account else { return nil }
-        
+
         return account.address
     }
-    
+
     public func getSelectedChain() -> Chain? {
         guard let chain = store.selectedChain else {
             return nil
         }
-        
+
         return chain
     }
-    
+
     public func addChainPreset(_ chain: Chain) {
         ChainPresets.ethChains.append(chain)
     }
-    
+
     public func selectChain(_ chain: Chain) {
         store.selectedChain = chain
     }
-    
+
     public func launchCurrentWallet() {
         guard
             let session = store.session,
             let urlString = session.peer.redirect?.native ?? session.peer.redirect?.universal,
             let url = URL(string: urlString)
         else { return }
-        
+
         DispatchQueue.main.async {
             UIApplication.shared.open(url, completionHandler: nil)
         }
     }
-    
+
     @discardableResult
     public func handleDeeplink(_ url: URL) -> Bool {
         if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -349,8 +351,8 @@ public class AppKitClient {
     private func setUpConnectionEvents() {
         analyticsService.track(.MODAL_LOADED)
 
-        signClient.sessionSettlePublisher.sink { [unowned self] session in
-            self.analyticsService.track(.CONNECT_SUCCESS(method: analyticsService.method, name: session.peer.name))
+        signClient.sessionSettlePublisher.sink { [unowned self] payload in
+            self.analyticsService.track(.CONNECT_SUCCESS(method: analyticsService.method, name: payload.session.peer.name))
         }.store(in: &disposeBag)
 
 

@@ -7,7 +7,7 @@ public protocol NetworkInteracting {
     var networkConnectionStatusPublisher: AnyPublisher<NetworkConnectionStatus, Never> { get }
     var requestPublisher: AnyPublisher<(topic: String, request: RPCRequest, decryptedPayload: Data, publishedAt: Date, derivedTopic: String?, encryptedMessage: String, attestation: String?), Never> { get }
     func subscribe(topic: String) async throws
-    func subscribe(topic: String, connectUnconditionally: Bool) async throws 
+    func subscribe(topic: String, connectUnconditionally: Bool) async throws
     func unsubscribe(topic: String)
     func batchSubscribe(topics: [String]) async throws
     func batchUnsubscribe(topics: [String]) async throws
@@ -17,8 +17,9 @@ public protocol NetworkInteracting {
     func respondError(topic: String, requestId: RPCID, protocolMethod: ProtocolMethod, reason: Reason, envelopeType: Envelope.EnvelopeType) async throws
     func handleHistoryRequest(topic: String, request: RPCRequest)
     func trackTopics(_ topics: [String])
+    func getSubscribedTopics() -> [String]
     func proposeSession(_ request: RPCRequest, topic: String) async throws
-    func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: RPCResponse, sessionSettleRequest: RPCRequest) async throws 
+    func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: RPCResponse, sessionSettleRequest: RPCRequest, approvedChains: [String], approvedMethods: [String], approvedEvents: [String]) async throws
 
     func requestSubscription<Request: Codable>(
         on request: ProtocolMethod

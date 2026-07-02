@@ -104,7 +104,7 @@ final class ApproveEngineTests: XCTestCase {
         let sessionTopic = String.generateTopic()
         cryptoMock.setAgreementSecret(AgreementKeys.stub(), topic: sessionTopic)
         var didCallBackOnSessionApproved = false
-        engine.onSessionSettle = { _ in
+        engine.onSessionSettle = { _, _ in
             didCallBackOnSessionApproved = true
         }
         sessionTopicToProposal.set(SessionProposal.stub().publicRepresentation(pairingTopic: ""), forKey: sessionTopic)
@@ -146,10 +146,112 @@ final class ApproveEngineTests: XCTestCase {
         XCTAssertFalse(cryptoMock.hasAgreementSecret(for: session.topic), "Responder must remove agreement secret")
         XCTAssertFalse(cryptoMock.hasPrivateKey(for: session.self.publicKey!), "Responder must remove private key")
     }
-    
+
+    func testApprovedSessionBuilderUsesExplicitChains() {
+        let ethMainnet = Blockchain("eip155:1")!
+        let polygon = Blockchain("eip155:137")!
+
+        let namespace = SessionNamespace(
+            chains: [ethMainnet, polygon],
+            accounts: [
+                Account("eip155:1:0x1234567890abcdef1234567890abcdef12345678")!,
+                Account("eip155:137:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")!
+            ],
+            methods: ["eth_sendTransaction"],
+            events: []
+        )
+
+        let approved = ApprovedSessionMetadataBuilder.chains(from: ["eip155": namespace])
+
+        XCTAssertEqual(approved, ["eip155:1", "eip155:137"])
+    }
+
+    func testApprovedSessionBuilderFallsBackToAccounts() {
+        let tonMainnetAccount = Account("ton:-239:UQCjI2QtnNXkYxNovk87FQF0J")!
+        let tonTestAccount = Account("ton:-3:UQCjI2QtnNXkYxNovk87FQF0J")!
+
+        let namespace = SessionNamespace(
+            chains: nil,
+            accounts: [tonMainnetAccount, tonTestAccount],
+            methods: ["ton_sendMessage"],
+            events: []
+        )
+
+        let approved = ApprovedSessionMetadataBuilder.chains(from: ["ton": namespace])
+
+        XCTAssertEqual(approved, ["ton:-239", "ton:-3"])
+    }
+
+    func testApprovedSessionBuilderDeduplicatesChains() {
+        let ethMainnet = Blockchain("eip155:1")!
+        let namespaceWithChains = SessionNamespace(
+            chains: [ethMainnet],
+            accounts: [Account("eip155:1:0x1234567890abcdef1234567890abcdef12345678")!],
+            methods: ["eth_sendTransaction"],
+            events: []
+        )
+        let namespaceWithAccountsOnly = SessionNamespace(
+            chains: nil,
+            accounts: [Account("eip155:1:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")!],
+            methods: ["eth_sign"],
+            events: []
+        )
+
+        let approved = ApprovedSessionMetadataBuilder.chains(from: [
+            "eip155": namespaceWithChains,
+            "eip155:1": namespaceWithAccountsOnly
+        ])
+
+        XCTAssertEqual(approved, ["eip155:1"])
+    }
+
+    func testApprovedSessionBuilderAggregatesMethods() {
+        let namespaceA = SessionNamespace(
+            chains: nil,
+            accounts: [Account("eip155:1:0xab16a96d359ec26a11e2c2b3d8f8b8942d5bfcdb")!],
+            methods: ["eth_sign", "eth_sendTransaction"],
+            events: []
+        )
+        let namespaceB = SessionNamespace(
+            chains: nil,
+            accounts: [Account("eip155:137:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")!],
+            methods: ["eth_sendTransaction", "personal_sign"],
+            events: []
+        )
+
+        let approvedMethods = ApprovedSessionMetadataBuilder.methods(from: [
+            "eip155": namespaceA,
+            "eip155:137": namespaceB
+        ])
+
+        XCTAssertEqual(approvedMethods, ["eth_sendTransaction", "eth_sign", "personal_sign"])
+    }
+
+    func testApprovedSessionBuilderAggregatesEvents() {
+        let namespaceA = SessionNamespace(
+            chains: nil,
+            accounts: [Account("eip155:1:0xab16a96d359ec26a11e2c2b3d8f8b8942d5bfcdb")!],
+            methods: [],
+            events: ["accountsChanged", "chainChanged"]
+        )
+        let namespaceB = SessionNamespace(
+            chains: nil,
+            accounts: [Account("eip155:137:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")!],
+            methods: [],
+            events: ["accountsChanged", "message"]
+        )
+
+        let approvedEvents = ApprovedSessionMetadataBuilder.events(from: [
+            "eip155": namespaceA,
+            "eip155:137": namespaceB
+        ])
+
+        XCTAssertEqual(approvedEvents, ["accountsChanged", "chainChanged", "message"])
+    }
+
     func testVerifyContextStorageAdd() {
         let proposalReceivedExpectation = expectation(description: "Wallet expects to receive a proposal")
-        
+
         let pairing = WCPairing.stub()
         let topicA = pairing.topic
         pairingStorageMock.setPairing(pairing)
@@ -162,53 +264,53 @@ final class ApproveEngineTests: XCTestCase {
         pairingRegisterer.subject.send(RequestSubscriptionPayload(id: RPCID("id"), topic: topicA, request: proposal, decryptedPayload: Data(), publishedAt: Date(), derivedTopic: nil, encryptedMessage: "", attestation: nil))
 
         wait(for: [proposalReceivedExpectation], timeout: 0.1)
-        
+
         XCTAssertTrue(verifyContextStore.getAll().count == 1)
     }
-    
+
     func testVerifyContextStorageRemoveOnApprove() async throws {
         let proposalReceivedExpectation = expectation(description: "Wallet expects to receive a proposal")
-        
+
         let pairing = WCPairing.stub()
         let topicA = pairing.topic
         pairingStorageMock.setPairing(pairing)
         let proposerPubKey = AgreementPrivateKey().publicKey.hexRepresentation
         let proposal = SessionProposal.stub(proposerPubKey: proposerPubKey)
-        
+
         engine.onSessionProposal = { _, _ in
             proposalReceivedExpectation.fulfill()
         }
         pairingRegisterer.subject.send(RequestSubscriptionPayload(id: RPCID("id"), topic: topicA, request: proposal, decryptedPayload: Data(), publishedAt: Date(), derivedTopic: nil, encryptedMessage: "", attestation: nil))
 
         wait(for: [proposalReceivedExpectation], timeout: 0.1)
-        
+
         XCTAssertTrue(verifyContextStore.getAll().count == 1)
-        
+
         _ = try await engine.approveProposal(proposerPubKey: proposal.proposer.publicKey, validating: SessionNamespace.stubDictionary())
-        
+
         XCTAssertTrue(verifyContextStore.getAll().isEmpty)
     }
-    
+
     func testVerifyContextStorageRemoveOnReject() async throws {
         let proposalReceivedExpectation = expectation(description: "Wallet expects to receive a proposal")
-        
+
         let pairing = WCPairing.stub()
         let topicA = pairing.topic
         pairingStorageMock.setPairing(pairing)
         let proposerPubKey = AgreementPrivateKey().publicKey.hexRepresentation
         let proposal = SessionProposal.stub(proposerPubKey: proposerPubKey)
-        
+
         engine.onSessionProposal = { _, _ in
             proposalReceivedExpectation.fulfill()
         }
         pairingRegisterer.subject.send(RequestSubscriptionPayload(id: RPCID("id"), topic: topicA, request: proposal, decryptedPayload: Data(), publishedAt: Date(), derivedTopic: nil, encryptedMessage: "", attestation: nil))
-        
+
         wait(for: [proposalReceivedExpectation], timeout: 0.1)
-        
+
         XCTAssertTrue(verifyContextStore.getAll().count == 1)
-        
+
         try await engine.reject(proposerPubKey: proposal.proposer.publicKey, reason: .userRejected)
-        
+
         XCTAssertTrue(verifyContextStore.getAll().isEmpty)
     }
 }

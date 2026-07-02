@@ -99,7 +99,7 @@ class Web3ModalViewModel: ObservableObject {
         signInteractor.sessionDeletePublisher
             .receive(on: DispatchQueue.main)
             .sink { topic, _ in
-                
+
                 if store.session?.topic == topic {
                     store.session = nil
                     store.account = nil
@@ -107,11 +107,11 @@ class Web3ModalViewModel: ObservableObject {
                 router.setRoute(Router.ConnectingSubpage.connectWallet)
             }
             .store(in: &disposeBag)
-        
+
         signInteractor.sessionsPublisher
             .receive(on: DispatchQueue.main)
             .sink { sessions in
-                
+
                 if sessions.isEmpty {
                     DispatchQueue.main.async {
                         store.session = nil
@@ -121,12 +121,12 @@ class Web3ModalViewModel: ObservableObject {
                 }
             }
             .store(in: &disposeBag)
-        
+
         Task {
             try? await signInteractor.connect(walletUniversalLink: nil)
         }
     }
-    
+
     func fetchIdentity() {
         Task { @MainActor in
             do {
@@ -137,7 +137,7 @@ class Web3ModalViewModel: ObservableObject {
             }
         }
     }
-    
+
     func fetchBalance() {
         Task { @MainActor in
             do {
@@ -184,14 +184,14 @@ class Web3ModalViewModel: ObservableObject {
         guard let namespaces = store.session?.namespaces.values else {
             return []
         }
-        
+
         var chains = namespaces
             .compactMap { $0.chains }
             .flatMap { $0 }
             .filter { chain in
                 isChainIdCAIP2Compliant(chainId: chain.absoluteString)
             }
-        
+
         if let requiredNamespaces = store.session?.requiredNamespaces.values {
             let requiredChains = requiredNamespaces
                 .compactMap { $0.chains }
@@ -199,39 +199,39 @@ class Web3ModalViewModel: ObservableObject {
                 .filter { chain in
                     isChainIdCAIP2Compliant(chainId: chain.absoluteString)
                 }
-            
+
             chains.append(contentsOf: requiredChains)
         }
-        
+
         return chains
             .compactMap { chain in
                 ChainPresets.ethChains.first(where: { chain.reference == $0.chainReference && chain.namespace == $0.chainNamespace })
             }
     }
-    
+
     func getMethods() -> [String] {
         guard let session = store.session else {
             return []
         }
-        
+
         let methods = session.namespaces.values
             .compactMap { $0.methods }
             .flatMap { $0 }
-        
+
         let requiredMethods = session.requiredNamespaces.values
             .compactMap { $0.methods }
             .flatMap { $0 }
-        
+
         return (methods + requiredMethods)
     }
-    
+
     func isChainIdCAIP2Compliant(chainId: String) -> Bool {
         let elements = chainId.split(separator: ":")
         guard elements.count == 2 else { return false }
 
         let namespace = String(elements[0])
         let reference = String(elements[1])
-        
+
         return isNamespaceRegexCompliant(key: namespace) && referenceRegex.matches(in: reference, options: [], range: NSRange(location: 0, length: reference.utf16.count)).count > 0
     }
 
@@ -250,33 +250,16 @@ class Web3ModalViewModel: ObservableObject {
                 switch response.result {
                 case .response(let result):
                     guard let signature = try? result.get(String.self),
-                          let siweMessage = self?.store.siweMessage,
-                          let account = self?.store.account?.account() else { return }
+                          let siweMessage = self?.store.siweMessage else { return }
 
-                    Task { [weak self] in
-                        do {
-                            try await Sign.instance.verifySIWE(signature: signature, message: siweMessage, address: account.address, chainId: account.blockchainIdentifier)
+                    // Note: Signature verification is now the responsibility of the consuming app.
+                    // The app should verify the signature before trusting it using Yttrium's Erc6492Client.
+                    AppKit.instance.SIWEAuthenticationPublisherSubject.send(.success((siweMessage, signature)))
 
-                            guard let self = self else { return }
-
-                            AppKit.instance.SIWEAuthenticationPublisherSubject.send(.success((siweMessage, signature)))
-
-                            DispatchQueue.main.async {
-                                self.router.setRoute(Router.AccountSubpage.profile)
-                                self.store.isModalShown = false
-                            }
-                        } catch {
-                            guard let self = self else { return }
-
-                            AppKit.instance.SIWEAuthenticationPublisherSubject.send(Result.failure(
-                                .messageVerificationFailed))
-                            DispatchQueue.main.async {
-                                self.store.toast = .init(style: .error, message: error.localizedDescription)
-                                guard let topic = self.store.session?.topic else { return }
-                                Task {try await AppKit.instance.disconnect(topic: topic)}
-
-                            }
-                        }
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        self.router.setRoute(Router.AccountSubpage.profile)
+                        self.store.isModalShown = false
                     }
                 case .error(let error):
                     DispatchQueue.main.async {

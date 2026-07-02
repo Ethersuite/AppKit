@@ -2,14 +2,14 @@ import Foundation
 
 /**
  A type-erased codable object.
- 
+
  The `AnyCodable` type allows to encode and decode data prior to knowing the underlying type, delaying the type-matching
  to a later point in execution.
- 
+
  When dealing with serialized JSON data structures where a single key can match to different types of values, the `AnyCodable`
  type can be used as a placeholder for `Any` while preserving the `Codable` conformance of the containing type. Another use case
  for the `AnyCodable` type is to facilitate the encoding of arrays of heterogeneous-typed values.
- 
+
  You can call `get(_:)` to transform the underlying value back to the type you specify.
  */
 public struct AnyCodable {
@@ -26,7 +26,7 @@ public struct AnyCodable {
 
     /**
      Creates a type-erased codable value that wraps the given instance.
-     
+
      - parameters:
         - codable: A codable value to wrap.
      */
@@ -54,13 +54,13 @@ public struct AnyCodable {
 
     /**
      Returns the underlying value, provided it matches the type spcified.
-     
+
      Use this method to retrieve a strong-typed value, as long as it can be decoded from its underlying representation.
-     
+
      - throws: If the value fails to decode to the specified type.
-     
+
      - returns: The underlying value, if it can be decoded.
-     
+
      ```
      let anyCodable = AnyCodable("a message")
      do {
@@ -87,7 +87,7 @@ public struct AnyCodable {
         return string
     }
 
-    private func getDataRepresentation() throws -> Data {
+    public func getDataRepresentation() throws -> Data {
         if let encodeToData = dataEncoding {
             return try encodeToData()
         } else {
@@ -161,12 +161,12 @@ extension AnyCodable: Decodable, Encodable {
             }
             value = result
         } else if let container = try? decoder.singleValueContainer() {
-            if let intVal = try? container.decode(Int.self) {
+            if let boolVal = try? container.decode(Bool.self) {
+                value = boolVal
+            } else if let intVal = try? container.decode(Int.self) {
                 value = intVal
             } else if let doubleVal = try? container.decode(Double.self) {
                 value = doubleVal
-            } else if let boolVal = try? container.decode(Bool.self) {
-                value = boolVal
             } else if let stringVal = try? container.decode(String.self) {
                 value = stringVal
             } else if container.decodeNil() {
@@ -199,12 +199,12 @@ extension AnyCodable: Decodable, Encodable {
             // ignoring that key
         } else {
             var container = encoder.singleValueContainer()
-            if let intVal = value as? Int {
+            if let nsNumber = value as? NSNumber, CFGetTypeID(nsNumber) == CFBooleanGetTypeID() {
+                try container.encode(nsNumber.boolValue)
+            } else if let intVal = value as? Int {
                 try container.encode(intVal)
             } else if let doubleVal = value as? Double {
                 try container.encode(doubleVal)
-            } else if let boolVal = value as? Bool {
-                try container.encode(boolVal)
             } else if let stringVal = value as? String {
                 try container.encode(stringVal)
             } else {

@@ -66,11 +66,11 @@ public class NetworkingInteractor: NetworkInteracting {
     public func subscribe(topic: String, connectUnconditionally: Bool) async throws {
         try await relayClient.subscribe(topic: topic, connectUnconditionally: connectUnconditionally)
     }
-    
+
     public func subscribe(topic: String) async throws {
         try await relayClient.subscribe(topic: topic)
     }
-    
+
     public func unsubscribe(topic: String) {
         relayClient.unsubscribe(topic: topic) { [unowned self] error in
             if let error = error {
@@ -79,6 +79,10 @@ public class NetworkingInteractor: NetworkInteracting {
                 rpcHistory.deleteAll(forTopic: topic)
             }
         }
+    }
+
+    public func getSubscribedTopics() -> [String] {
+        return relayClient.getSubscribedTopics()
     }
 
     public func batchSubscribe(topics: [String]) async throws {
@@ -243,31 +247,48 @@ public class NetworkingInteractor: NetworkInteracting {
             throw error
         }
     }
-    
+
     public func proposeSession(_ request: RPCRequest, topic: String) async throws {
         let correlationId = request.id
         try rpcHistory.set(request, forTopic: topic, emmitedBy: .local, transportType: .relay)
         let message = try serializer.serialize(topic: topic, encodable: request, envelopeType: .type0)
         try await relayClient.proposeSession(pairingTopic: topic, sessionProposal: message, correlationId: correlationId)
     }
-    
-    public func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: RPCResponse, sessionSettleRequest: RPCRequest) async throws {
-        
+
+    public func approveSession(
+        pairingTopic: String,
+        sessionTopic: String,
+        sessionProposalResponse: RPCResponse,
+        sessionSettleRequest: RPCRequest,
+        approvedChains: [String],
+        approvedMethods: [String],
+        approvedEvents: [String]
+    ) async throws {
+
         let correlationId = sessionProposalResponse.id
 
         try rpcHistory.validate(sessionProposalResponse)
         try rpcHistory.set(sessionSettleRequest, forTopic: sessionTopic, emmitedBy: .local, transportType: .relay)
-        
+
         let serialisedSessionProposalResponse = try serializer.serialize(topic: pairingTopic, encodable: sessionProposalResponse, envelopeType: .type0)
-        
+
         let serialisedSessionSettlementRequest = try serializer.serialize(topic: sessionTopic, encodable: sessionSettleRequest, envelopeType: .type0)
-        
-        try await relayClient.approveSession(pairingTopic: pairingTopic, sessionTopic: sessionTopic, sessionProposalResponse: serialisedSessionProposalResponse, sessionSettlementRequest: serialisedSessionSettlementRequest, correlationId: correlationId)
-        
+
+        try await relayClient.approveSession(
+            pairingTopic: pairingTopic,
+            sessionTopic: sessionTopic,
+            sessionProposalResponse: serialisedSessionProposalResponse,
+            sessionSettlementRequest: serialisedSessionSettlementRequest,
+            correlationId: correlationId,
+            approvedChains: approvedChains,
+            approvedMethods: approvedMethods,
+            approvedEvents: approvedEvents
+        )
+
         try rpcHistory.resolve(sessionProposalResponse)
 
     }
-    
+
     public func respond(topic: String, response: RPCResponse, protocolMethod: ProtocolMethod, envelopeType: Envelope.EnvelopeType, tvfData: TVFData?) async throws {
         try rpcHistory.validate(response)
         let message = try serializer.serialize(topic: topic, encodable: response, envelopeType: envelopeType)
@@ -290,7 +311,7 @@ public class NetworkingInteractor: NetworkInteracting {
         let response = RPCResponse(id: requestId, error: error)
         try await respond(topic: topic, response: response, protocolMethod: protocolMethod, envelopeType: envelopeType, tvfData: nil)
     }
-    
+
     public func trackTopics(_ topics: [String]) {
         relayClient.trackTopics(topics)
     }
@@ -307,7 +328,7 @@ public class NetworkingInteractor: NetworkInteracting {
             logger.debug("Networking Interactor - Received unknown object type from networking relay")
         }
     }
-    
+
     public func handleHistoryRequest(topic: String, request: RPCRequest) {
         requestPublisherSubject.send((topic, request, Data(), Date(), nil, "", nil ))
     }

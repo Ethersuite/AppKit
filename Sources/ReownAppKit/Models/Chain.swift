@@ -1,7 +1,7 @@
 import Foundation
 
 public struct Chain: Identifiable, Hashable {
-        
+
     public var id: String {
         "\(chainNamespace):\(chainReference)"
     }
@@ -16,19 +16,19 @@ public struct Chain: Identifiable, Hashable {
     public var rpcUrl: String
     public var blockExplorerUrl: String
     public var imageId: String
-    
+
     public struct Token: Hashable {
         public var name: String
         public var symbol: String
         public var decimal: Int
-        
+
         public init(name: String, symbol: String, decimal: Int) {
             self.name = name
             self.symbol = symbol
             self.decimal = decimal
         }
     }
-    
+
     public init(chainName: String, chainNamespace: String, chainReference: String, requiredMethods: [String], optionalMethods: [String], events: [String], token: Chain.Token, rpcUrl: String, blockExplorerUrl: String, imageId: String) {
         self.chainName = chainName
         self.chainNamespace = chainNamespace
@@ -44,10 +44,10 @@ public struct Chain: Identifiable, Hashable {
 }
 
 enum EthUtils {
-    
+
     static let walletSwitchEthChain = "wallet_switchEthereumChain"
     static let walletAddEthChain = "wallet_addEthereumChain"
-    
+
     static let ethRequiredMethods = [
         "personal_sign",
         "eth_signTypedData",
@@ -55,7 +55,7 @@ enum EthUtils {
     ]
     static let ethOptionalMethods = [walletSwitchEthChain, walletAddEthChain]
     static let ethMethods = ethRequiredMethods + ethOptionalMethods
-    
+
     static let chainChanged = "chainChanged"
     static let accountsChanged = "accountsChanged"
 
@@ -197,6 +197,18 @@ enum ChainPresets {
             rpcUrl: "https://forno.celo.org",
             blockExplorerUrl: "https://explorer.celo.org/mainnet",
             imageId: "ab781bbc-ccc6-418d-d32d-789b15da1f00"
+        ),
+        Chain(
+            chainName: "Monad",
+            chainNamespace: "eip155",
+            chainReference: "143",
+            requiredMethods: EthUtils.ethRequiredMethods,
+            optionalMethods: EthUtils.ethOptionalMethods,
+            events: EthUtils.ethEvents,
+            token: .init(name: "Monad", symbol: "MON", decimal: 18),
+            rpcUrl: "https://rpc.monad.xyz",
+            blockExplorerUrl: "https://monadexplorer.com",
+            imageId: ""
         ),
         Chain(
             chainName: "Aurora",

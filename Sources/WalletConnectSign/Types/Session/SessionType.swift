@@ -19,6 +19,7 @@ internal enum SessionType {
         let sessionProperties: [String: String]?
         let scopedProperties: [String: String]?
         let expiry: Int64
+        let proposalRequestsResponses: ProposalRequestsResponses?
     }
 
     struct UpdateParams: Codable, Equatable {
@@ -45,7 +46,7 @@ internal enum SessionType {
             let method: String
             let params: AnyCodable
             let expiryTimestamp: UInt64?
-            
+
             func isExpired(currentDate: Date = Date()) -> Bool {
                 guard let expiry = expiryTimestamp else { return false }
                 let expiryDate = Date(timeIntervalSince1970: TimeInterval(expiry))

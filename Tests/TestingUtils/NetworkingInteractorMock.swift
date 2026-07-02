@@ -9,20 +9,25 @@ public class NetworkingInteractorMock: NetworkInteracting {
     public func proposeSession(_ request: JSONRPC.RPCRequest, topic: String) async throws {
         subscriptions.append(topic)
     }
-    
-    public func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: JSONRPC.RPCResponse, sessionSettleRequest: JSONRPC.RPCRequest) async throws {
+
+    public func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: JSONRPC.RPCResponse, sessionSettleRequest: JSONRPC.RPCRequest, approvedChains: [String], approvedMethods: [String], approvedEvents: [String]) async throws {
+        _ = (approvedChains, approvedMethods, approvedEvents)
         subscriptions.append(sessionTopic)
     }
-    
+
     public func trackTopics(_ topics: [String]) {
-        
+
     }
-    
+
+    public func getSubscribedTopics() -> [String] {
+        return subscriptions
+    }
+
     public func subscribe(topic: String, connectUnconditionally: Bool) async throws {
         defer { onSubscribeCalled?() }
         subscriptions.append(topic)
         didCallSubscribe = true    }
-    
+
     public var isSocketConnected: Bool = true
 
 
@@ -49,7 +54,7 @@ public class NetworkingInteractorMock: NetworkInteracting {
 
     public let socketConnectionStatusPublisherSubject = PassthroughSubject<SocketConnectionStatus, Never>()
     public let networkConnectionStatusPublisherSubject = CurrentValueSubject<NetworkConnectionStatus, Never>(.connected)
-    
+
     public var socketConnectionStatusPublisher: AnyPublisher<SocketConnectionStatus, Never> {
         socketConnectionStatusPublisherSubject.eraseToAnyPublisher()
     }
@@ -188,7 +193,7 @@ public class NetworkingInteractorMock: NetworkInteracting {
         subscriptions.append(topic)
         didCallSubscribe = true
     }
-    
+
     public func handleHistoryRequest(topic: String, request: JSONRPC.RPCRequest) {
         didCallHandleHistoryRequest = true
     }

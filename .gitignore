@@ -1,5 +1,6 @@
 .DS_Store
 .build/
+build/
 
 ## User settings
 xcuserdata/
@@ -19,9 +20,13 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 fastlane/README.md
 .env
+.env.maestro
 
-# Configuration
-Configuration.xcconfig
+# Maestro E2E test flows (downloaded at runtime)
+.maestro/
+
+# Configuration - local overrides (Configuration.xcconfig is tracked as template)
+Configuration.local.xcconfig
 
 # Cache
 SourcePackagesCache
@@ -33,3 +38,7 @@ DerivedDataCache
 test_results/
 
 Sources/WalletConnectModal/Secrets/secrets.json
+
+# iOS Provisioning Profiles
+*.mobileprovision
+.claude/

@@ -25,6 +25,8 @@ public class AppKit {
         set { UserDefaults.standard.set(newValue, forKey: "appkit.primarySessionTopic") }
     }
 
+    private static let configQueue = DispatchQueue(label: "com.walletconnect..appkit.config", attributes: .concurrent)
+
     /// AppKit client instance
     public static var instance: AppKitClient = {
         guard let config = AppKit.config else {
@@ -37,9 +39,9 @@ public class AppKit {
             store: .shared,
             analyticsService: .shared
         )
-        
+
         let store = Store.shared
-        
+
         // Try to find primary session first, then fall back to first session
         let session = primarySessionTopic != nil
             ? client.getSessions().first(where: { $0.topic == primarySessionTopic })
@@ -58,17 +60,17 @@ public class AppKit {
         } else {
             AccountStorage.clear()
         }
-        
+
         return client
     }()
-    
+
     struct Config {
         static let sdkVersion: String = {
-            return EnvironmentInfo.sdkName                    
+            return EnvironmentInfo.sdkName
         }()
 
         static let sdkType = "appkit"
-        
+
         let projectId: String
         var metadata: AppMetadata
         let crypto: CryptoProvider
@@ -85,9 +87,18 @@ public class AppKit {
         let onError: (Error) -> Void
 
     }
-    
-    private(set) static var config: Config!
-    
+
+    private static var _config: Config!
+
+    static var config: Config! {
+        get {
+            return configQueue.sync { _config }
+        }
+        set {
+            configQueue.async(flags: .barrier) { _config = newValue }
+        }
+    }
+
     private(set) static var viewModel: Web3ModalViewModel!
 
     private init() {}
@@ -104,10 +115,10 @@ public class AppKit {
     ///         is treated as the primary wallet connection regardless of session ordering.
     public static func updatePrimarySession(_ topic: String?) {
         guard let topic = topic else { return }
-        
+
         // Find the session with the specified topic
         guard let session = instance.getSessions().first(where: { $0.topic == topic }) else { return }
-        
+
         // Set as primary session and re-initialize the store
         primarySessionTopic = topic
         let store = Store.shared
@@ -134,7 +145,7 @@ public class AppKit {
         onError: @escaping (Error) -> Void = { _ in }
     ) {
         Pair.configure(metadata: metadata)
-        
+
         AppKit.config = AppKit.Config(
             projectId: projectId,
             metadata: metadata,
@@ -157,15 +168,15 @@ public class AppKit {
         let w3mApiInteractor = W3MAPIInteractor(store: store)
         let signInteractor = SignInteractor(store: store)
         let blockchainApiInteractor = BlockchainAPIInteractor(store: store)
-        
+
         store.customWallets = customWallets
-        
+
         configureCoinbaseIfNeeded(
             store: store,
             metadata: metadata,
             w3mApiInteractor: w3mApiInteractor
         )
-        
+
         AppKit.viewModel = Web3ModalViewModel(
             router: router,
             store: store,
@@ -174,7 +185,7 @@ public class AppKit {
             blockchainApiInteractor: blockchainApiInteractor,
             supportsAuthenticatedSession: (config.authRequestParams != nil)
         )
-        
+
         Task(priority: .background) {
             try? await w3mApiInteractor.fetchWalletImages(for: store.recentWallets + store.customWallets)
             try? await w3mApiInteractor.fetchAllWalletMetadata()
@@ -182,18 +193,26 @@ public class AppKit {
             try? await w3mApiInteractor.prefetchChainImages()
         }
     }
-    
+
     public static func set(sessionParams: SessionParams) {
-        AppKit.config.sessionParams = sessionParams
+        configQueue.async(flags: .barrier) {
+            _config.sessionParams = sessionParams
+        }
     }
-    
+
+    public static func set(authRequestParams: AuthRequestParams) {
+        configQueue.async(flags: .barrier) {
+            _config.authRequestParams = authRequestParams
+        }
+    }
+
     private static func configureCoinbaseIfNeeded(
         store: Store,
         metadata: AppMetadata,
         w3mApiInteractor: W3MAPIInteractor
     ) {
         guard AppKit.config.coinbaseEnabled else { return }
-        
+
         if let redirectLink = metadata.redirect?.universal ?? metadata.redirect?.native {
             CoinbaseWalletSDK.configure(callback: URL(string: redirectLink)!)
         } else {
@@ -201,7 +220,7 @@ public class AppKit {
                 callback: URL(string: "w3mdapp://")!
             )
         }
-            
+
         var wallet: Wallet = .init(
             id: "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa",
             name: "Coinbase",
@@ -224,22 +243,22 @@ public class AppKit {
                                     reference: String(account.networkId)
                                 )
                             else { return }
-                        
+
                             store.connectedWith = .cb
                             store.account = .init(
                                 address: account.address,
                                 chain: blockchain
                             )
-                        
+
                             withAnimation {
                                 store.isModalShown = false
                             }
                             AppKit.viewModel.router.setRoute(Router.AccountSubpage.profile)
-                            
+
                             let matchingChain = ChainPresets.ethChains.first(where: {
                                 $0.chainNamespace == blockchain.namespace && $0.chainReference == blockchain.reference
                             })
-                        
+
                             store.selectedChain = matchingChain
                         case .failure(let error):
                             store.toast = .init(style: .error, message: error.localizedDescription)
@@ -247,11 +266,11 @@ public class AppKit {
                 }
             }
         )
-            
+
         wallet.isInstalled = CoinbaseWalletSDK.isCoinbaseWalletInstalled()
-            
+
         store.customWallets.append(wallet)
-            
+
         Task { [wallet] in
             try? await w3mApiInteractor.fetchWalletImages(for: [wallet])
         }
@@ -267,33 +286,33 @@ public extension AppKit {
             assertionFailure("No controller found for presenting modal")
             return
         }
-        
+
         _ = AppKit.instance
-        
+
         AppKit.viewModel.router.setRoute(Router.NetworkSwitchSubpage.selectChain)
-        
+
         Store.shared.connecting = true
-        
+
         let modal = Web3ModalSheetController(router: AppKit.viewModel.router)
         vc.present(modal, animated: true)
     }
-    
+
     static func present(from presentingViewController: UIViewController? = nil) {
         guard let vc = presentingViewController ?? topViewController() else {
             assertionFailure("No controller found for presenting modal")
             return
         }
-        
+
         _ = AppKit.instance
-        
+
         Store.shared.connecting = true
-        
+
         AppKit.viewModel.router.setRoute(Store.shared.account != nil ? Router.AccountSubpage.profile : Router.ConnectingSubpage.connectWallet)
-        
+
         let modal = Web3ModalSheetController(router: AppKit.viewModel.router)
         vc.present(modal, animated: true)
     }
-    
+
     private static func topViewController(_ base: UIViewController? = nil) -> UIViewController? {
         let base = base ?? UIApplication
             .shared
@@ -301,21 +320,21 @@ public extension AppKit {
             .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
             .last { $0.isKeyWindow }?
             .rootViewController
-        
+
         if let nav = base as? UINavigationController {
             return topViewController(nav.visibleViewController)
         }
-        
+
         if let tab = base as? UITabBarController {
             if let selected = tab.selectedViewController {
                 return topViewController(selected)
             }
         }
-        
+
         if let presented = base?.presentedViewController {
             return topViewController(presented)
         }
-        
+
         return base
     }
 }
@@ -337,7 +356,7 @@ public struct SessionParams {
     public let requiredNamespaces: [String: ProposalNamespace]
     public let optionalNamespaces: [String: ProposalNamespace]?
     public let sessionProperties: [String: String]?
-    
+
     /// Initialize SessionParams with namespaces that will be treated as optional
     /// to improve connection compatibility between dApps and wallets.
     /// - Parameters:
@@ -351,7 +370,7 @@ public struct SessionParams {
         self.optionalNamespaces = namespaces
         self.sessionProperties = sessionProperties
     }
-    
+
     /// Initialize SessionParams with required and optional namespaces
     /// - Parameters:
     ///   - requiredNamespaces: Required namespaces for the session (deprecated - will be moved to optional namespaces)
@@ -363,7 +382,7 @@ public struct SessionParams {
         self.optionalNamespaces = optionalNamespaces
         self.sessionProperties = sessionProperties
     }
-    
+
     public static let `default`: Self = {
         let methods: Set<String> = Set(EthUtils.ethMethods)
         let events: Set<String> = ["chainChanged", "accountsChanged"]
@@ -386,7 +405,7 @@ public struct SessionParams {
             )
         ]
 
-       
+
         return SessionParams(
             namespaces: namespaces,
             sessionProperties: nil

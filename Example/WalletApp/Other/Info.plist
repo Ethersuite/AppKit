@@ -2,8 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Swift Wallet</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>KHTeka-Light.otf</string>
+		<string>KHTeka-Regular.otf</string>
+		<string>KHTeka-Medium.otf</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -19,6 +27,8 @@
 	<string>$(CONFIGURATION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NFCReaderUsageDescription</key>
+	<string>This app reads NFC tags to receive payment links from POS terminals.</string>
 	<key>MIXPANEL_TOKEN</key>
 	<string>$(MIXPANEL_TOKEN)</string>
 	<key>NSAppTransportSecurity</key>
@@ -30,10 +40,14 @@
 	<array>
 		<string>INSendMessageIntent</string>
 	</array>
+	<key>PAY_API_KEY</key>
+	<string>$(PAY_API_KEY)</string>
 	<key>PIMLICO_API_KEY</key>
 	<string>$(PIMLICO_API_KEY)</string>
 	<key>PROJECT_ID</key>
 	<string>$(PROJECT_ID)</string>
+	<key>TEST_WALLET_PRIVATE_KEY</key>
+	<string>$(TEST_WALLET_PRIVATE_KEY)</string>
 	<key>RPC_URL</key>
 	<string>$(RPC_URL)</string>
 	<key>SIMULATOR_IDENTIFIER</key>
@@ -55,6 +69,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
 	<key>WALLETAPP_SENTRY_DSN</key>
 	<string>$(WALLETAPP_SENTRY_DSN)</string>
 </dict>

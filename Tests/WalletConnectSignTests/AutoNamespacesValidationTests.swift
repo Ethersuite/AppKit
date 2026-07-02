@@ -37,7 +37,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesDifferentChainsRequiredAndOptional() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -77,7 +77,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesInlineChainRequiredAndOptional() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -115,7 +115,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesMultipleInlineChainRequiredAndOptional() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -156,7 +156,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesMultipleInlineChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -197,7 +197,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesUnsupportedOptionalChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -240,7 +240,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesPartiallySupportedOptionalChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -284,7 +284,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesPartiallySupportedOptionalMethods() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -323,7 +323,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesPartiallySupportedOptionalEvents() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -362,7 +362,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesExtraSupportedChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -405,7 +405,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesMultipleNamespacesRequired() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -461,7 +461,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesNoSupportedRequiredChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:5")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -496,7 +496,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesPartiallySupportedRequiredChains() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -532,7 +532,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesNoSupportedRequiredMethods() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -562,7 +562,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesNoSupportedRequiredEvents() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -592,7 +592,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesNoAccountsForRequiredChain() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:2")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -622,7 +622,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesPartialAccountsForRequiredChain() async {
         let accounts = [
             Account(blockchain: Blockchain("eip155:2")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -652,7 +652,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
             )
         )
     }
-    
+
     func testAutoNamespacesSameChainEmptyOptinalEvents() {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -691,7 +691,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesSameChainEmptyRequiredEvents() {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -731,7 +731,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesSameChainEmptyEvents() {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!
@@ -771,7 +771,7 @@ final class AutoNamespacesValidationTests: XCTestCase {
         ]
         XCTAssertEqual(sessionNamespaces, expectedNamespaces)
     }
-    
+
     func testAutoNamespacesDifferentChainEmptyOptinalEvents() {
         let accounts = [
             Account(blockchain: Blockchain("eip155:1")!, address: "0x57f48fAFeC1d76B27e3f29b8d277b6218CDE6092")!,
@@ -1055,7 +1055,7 @@ fileprivate extension Session.Proposal {
             optionalNamespaces: optionalNamespaces,
             sessionProperties: nil,
             scopedProperties: nil,
-            proposal: SessionProposal(relays: [], proposer: Participant(publicKey: "", metadata: AppMetadata.stub()), requiredNamespaces: [:])
+            proposal: SessionProposal(relays: [], proposer: Participant(publicKey: "", metadata: AppMetadata.stub()), requiredNamespaces: [:]), requests: nil
         )
     }
 }

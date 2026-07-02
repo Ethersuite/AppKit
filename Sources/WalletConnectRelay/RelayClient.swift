@@ -132,7 +132,7 @@ public final class RelayClient {
         #endif
         let request = Publish(params: .init(topic: topic, message: payload, ttl: ttl, prompt: prompt, tag: tag, correlationId: coorelationId, tvfData: tvfData)).asRPCRequest()
         let message = try request.asJSONEncodedString()
-        
+
         logger.debug("[Publish] Sending payload on topic: \(topic)")
 
         try await dispatcher.protectedSend(message, connectUnconditionally: true)
@@ -158,7 +158,7 @@ public final class RelayClient {
                 })
         }
     }
-    
+
     public func proposeSession(pairingTopic: String, sessionProposal: String, correlationId: RPCID?) async throws {
         let request = ProposeSession(params: .init(pairingTopic: pairingTopic, sessionProposal: sessionProposal, correlationId: correlationId)).asRPCRequest()
         let message = try request.asJSONEncodedString()
@@ -166,9 +166,19 @@ public final class RelayClient {
         topicsTracker.addTopics([pairingTopic])
         subscriptionsTracker.setSubscription(for: pairingTopic, id: UUID().uuidString)
     }
-    
-    public func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: String, sessionSettlementRequest: String, correlationId: RPCID?) async throws {
-        let request = ApproveSession(params: .init(pairingTopic: pairingTopic, sessionTopic: sessionTopic, sessionProposalResponse: sessionProposalResponse, sessionSettlementRequest: sessionSettlementRequest, correlationId: correlationId)).asRPCRequest()
+
+    public func approveSession(pairingTopic: String, sessionTopic: String, sessionProposalResponse: String, sessionSettlementRequest: String, correlationId: RPCID?, approvedChains: [String], approvedMethods: [String], approvedEvents: [String]) async throws {
+        let params = ApproveSession.Params(
+            pairingTopic: pairingTopic,
+            sessionTopic: sessionTopic,
+            sessionProposalResponse: sessionProposalResponse,
+            sessionSettlementRequest: sessionSettlementRequest,
+            correlationId: correlationId,
+            approvedChains: approvedChains,
+            approvedMethods: approvedMethods,
+            approvedEvents: approvedEvents
+        )
+        let request = ApproveSession(params: params).asRPCRequest()
         let message = try request.asJSONEncodedString()
         try await dispatcher.protectedSend(message, connectUnconditionally: true)
         topicsTracker.addTopics([sessionTopic])
@@ -305,9 +315,13 @@ public final class RelayClient {
     public func getClientId() throws -> String {
         try clientIdStorage.getClientId()
     }
-    
+
     public func trackTopics(_ topics: [String]) {
         topicsTracker.addTopics(topics)
+    }
+
+    public func getSubscribedTopics() -> [String] {
+        return subscriptionsTracker.getTopics()
     }
 
     // FIXME: Parse data to string once before trying to decode -> respond error on fail

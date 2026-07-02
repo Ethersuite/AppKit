@@ -15,7 +15,7 @@ final class ApproveEngine {
 
     var onSessionProposal: ((Session.Proposal, VerifyContext?) -> Void)?
     var onSessionRejected: ((Session.Proposal, Reason) -> Void)?
-    var onSessionSettle: ((Session) -> Void)?
+    var onSessionSettle: ((Session, ProposalRequestsResponses?) -> Void)?
 
     private let networkingInteractor: NetworkInteracting
     private let pairingStore: WCPairingStorage
@@ -73,7 +73,7 @@ final class ApproveEngine {
     }
 
 
-    func approveProposal(proposerPubKey: String, validating sessionNamespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil) async throws -> Session {
+    func approveProposal(proposerPubKey: String, validating sessionNamespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil, proposalRequestsResponses: ProposalRequestsResponses? = nil) async throws -> Session {
         eventsClient.startTrace(topic: "")
         logger.debug("Approving session proposal...")
 
@@ -139,37 +139,49 @@ final class ApproveEngine {
 
         let result = SessionType.ProposeResponse(relay: relay, responderPublicKey: selfPublicKey.hexRepresentation)
         let response = RPCResponse(id: payload.id, result: result)
-        
-        let settleParams = try createSettleParams(sessionTopic: sessionTopic, proposal: proposal, namespaces: sessionNamespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties)
-        
+
+        let settleParams = try createSettleParams(sessionTopic: sessionTopic, proposal: proposal, namespaces: sessionNamespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties, proposalRequestsResponses: proposalRequestsResponses)
+
         let settleRequest = RPCRequest(method: SessionSettleProtocolMethod().method, params: settleParams)
-        
+
+        let approvedChains = ApprovedSessionMetadataBuilder.chains(from: settleParams.namespaces)
+        let approvedMethods = ApprovedSessionMetadataBuilder.methods(from: settleParams.namespaces)
+        let approvedEvents = ApprovedSessionMetadataBuilder.events(from: settleParams.namespaces)
+
         do {
-            try await networkingInteractor.approveSession(pairingTopic: pairingTopic, sessionTopic: sessionTopic, sessionProposalResponse: response, sessionSettleRequest: settleRequest)
+            try await networkingInteractor.approveSession(
+                pairingTopic: pairingTopic,
+                sessionTopic: sessionTopic,
+                sessionProposalResponse: response,
+                sessionSettleRequest: settleRequest,
+                approvedChains: approvedChains,
+                approvedMethods: approvedMethods,
+                approvedEvents: approvedEvents
+            )
         } catch {
             eventsClient.saveTraceEvent(ApproveSessionTraceErrorEvents.approveSessionFailure)
             throw error
         }
-        
+
         let session = createSession(topic: sessionTopic, proposal: proposal, pairingTopic: pairingTopic, settleParams: settleParams)
-        
+
         sessionStore.setSession(session)
 
-        onSessionSettle?(session.publicRepresentation())
+        onSessionSettle?(session.publicRepresentation(), nil)
         eventsClient.saveTraceEvent(SessionApproveExecutionTraceEvents.approvSessionSuccess)
         logger.debug("wc_sessionApprove have been sent")
-        
+
         proposalPayloadsStore.delete(forKey: proposerPubKey)
         verifyContextStore.delete(forKey: proposerPubKey)
         return session.publicRepresentation()
-        
+
     }
 
     func reject(proposerPubKey: String, reason: SignReasonCode) async throws {
         guard let payload = try proposalPayloadsStore.get(key: proposerPubKey) else {
             throw Errors.proposalNotFound
         }
- 
+
         try await networkingInteractor.respondError(
             topic: payload.topic,
             requestId: payload.id,
@@ -192,9 +204,9 @@ final class ApproveEngine {
         networkingInteractor.unsubscribe(topic: pairingTopic)
         kms.deleteSymmetricKey(for: pairingTopic)
     }
-    
-    func createSettleParams(sessionTopic: String, proposal: SessionProposal, namespaces: [String: SessionNamespace], sessionProperties: [String: String]?, scopedProperties: [String: String]?) throws -> SessionType.SettleParams {
-        
+
+    func createSettleParams(sessionTopic: String, proposal: SessionProposal, namespaces: [String: SessionNamespace], sessionProperties: [String: String]?, scopedProperties: [String: String]?, proposalRequestsResponses: ProposalRequestsResponses?) throws -> SessionType.SettleParams {
+
         guard let agreementKeys = kms.getAgreementSecret(for: sessionTopic) else {
             throw Errors.agreementMissingOrInvalid
         }
@@ -216,9 +228,10 @@ final class ApproveEngine {
             namespaces: namespaces,
             sessionProperties: sessionProperties,
             scopedProperties: scopedProperties,
-            expiry: Int64(expiry)
+            expiry: Int64(expiry),
+            proposalRequestsResponses: proposalRequestsResponses
         )
-        
+
         return settleParams
     }
 
@@ -329,7 +342,10 @@ private extension ApproveEngine {
                 removePairing(pairingTopic: payload.topic)
             }
         } catch {
-            return logger.debug(error.localizedDescription)
+            logger.debug(error.localizedDescription)
+            removePairing(pairingTopic: payload.topic)
+            kms.deletePrivateKey(for: payload.request.proposer.publicKey)
+            return
         }
     }
 
@@ -383,14 +399,14 @@ private extension ApproveEngine {
             return respondError(payload: payload, reason: .invalidUpdateRequest, protocolMethod: SessionProposeProtocolMethod.responseAutoReject())
         }
         proposalPayloadsStore.set(payload, forKey: proposal.proposer.publicKey)
-        
+
         pairingRegisterer.setReceived(pairingTopic: payload.topic)
 
         if let verifyContext = try? verifyContextStore.get(key: proposal.proposer.publicKey) {
             onSessionProposal?(proposal.publicRepresentation(pairingTopic: payload.topic), verifyContext)
             return
         }
-        
+
         Task(priority: .high) { [weak self] in
             guard let self = self else {return}
             do {
@@ -464,25 +480,61 @@ private extension ApproveEngine {
             verifyContext: nil
         )
         sessionStore.setSession(session)
+        networkingInteractor.unsubscribe(topic: pairingTopic)
 
         Task(priority: .high) {
             try await networkingInteractor.respondSuccess(topic: payload.topic, requestId: payload.id, protocolMethod: protocolMethod)
         }
-        onSessionSettle?(session.publicRepresentation())
+        let publicSession = session.publicRepresentation()
+        let responses = params.proposalRequestsResponses?.authentication?.isEmpty == false ? params.proposalRequestsResponses : nil
+        onSessionSettle?(publicSession, responses)
     }
-    
+
     func resolveNetworkConnectionStatus() async -> NetworkConnectionStatus {
         return await withCheckedContinuation { continuation in
             let cancellable = networkingInteractor.networkConnectionStatusPublisher.sink { value in
                 continuation.resume(returning: value)
             }
-            
+
             Task(priority: .high) {
                 await withTaskCancellationHandler {
                     cancellable.cancel()
                 } onCancel: { }
             }
         }
+    }
+}
+
+enum ApprovedSessionMetadataBuilder {
+    static func chains(from namespaces: [String: SessionNamespace]) -> [String] {
+        var chains = Set<String>()
+        namespaces.values.forEach { namespace in
+            if let namespaceChains = namespace.chains, !namespaceChains.isEmpty {
+                namespaceChains.forEach { chain in
+                    chains.insert(chain.absoluteString)
+                }
+            } else {
+                namespace.accounts.forEach { account in
+                    chains.insert(account.blockchain.absoluteString)
+                }
+            }
+        }
+
+        return chains.sorted()
+    }
+
+    static func methods(from namespaces: [String: SessionNamespace]) -> [String] {
+        let methods = namespaces.values.reduce(into: Set<String>()) { result, namespace in
+            result.formUnion(namespace.methods)
+        }
+        return methods.sorted()
+    }
+
+    static func events(from namespaces: [String: SessionNamespace]) -> [String] {
+        let events = namespaces.values.reduce(into: Set<String>()) { result, namespace in
+            result.formUnion(namespace.events)
+        }
+        return events.sorted()
     }
 }
 

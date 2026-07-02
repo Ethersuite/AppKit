@@ -36,7 +36,7 @@ public final class SignClient: SignClientProtocol {
     /// Publisher that sends session when one is settled
     ///
     /// Event is emited on proposer and responder client when both communicating peers have successfully established a session.
-    public var sessionSettlePublisher: AnyPublisher<Session, Never> {
+    public var sessionSettlePublisher: AnyPublisher<(session: Session, responses: ProposalRequestsResponses?), Never> {
         sessionSettlePublisherSubject.eraseToAnyPublisher()
     }
 
@@ -115,6 +115,10 @@ public final class SignClient: SignClientProtocol {
     /// App should subscribe for events in order to receive CACAO object with a signature matching authentication request.
     ///
     /// Emited result may be an error.
+    ///
+    /// - Important: Starting from version 2.0, signature verification is the responsibility of the dApp.
+    /// The SDK no longer automatically verifies CACAO signatures. You should verify the signatures
+    /// before trusting the session using the Yttrium library's `Erc6492Client`.
     public var authResponsePublisher: AnyPublisher<(id: RPCID, result: Result<(Session?, [Cacao]), AuthError>), Never> {
         authResposeSubscriber.authResponsePublisher
     }
@@ -170,7 +174,7 @@ public final class SignClient: SignClientProtocol {
 
     private let sessionProposalPublisherSubject = PassthroughSubject<(proposal: Session.Proposal, context: VerifyContext?), Never>()
     private let socketConnectionStatusPublisherSubject = PassthroughSubject<SocketConnectionStatus, Never>()
-    private let sessionSettlePublisherSubject = PassthroughSubject<Session, Never>()
+    private let sessionSettlePublisherSubject = PassthroughSubject<(session: Session, responses: ProposalRequestsResponses?), Never>()
     private let sessionDeletePublisherSubject = PassthroughSubject<(String, Reason), Never>()
     private let sessionResponsePublisherSubject = PassthroughSubject<Response, Never>()
     private let sessionRejectionPublisherSubject = PassthroughSubject<(Session.Proposal, Reason), Never>()
@@ -182,6 +186,7 @@ public final class SignClient: SignClientProtocol {
     private var authRequestPublisherSubject = PassthroughSubject<(request: AuthenticationRequest, context: VerifyContext?), Never>()
     private let authRequestSubscribersTracking: AuthRequestSubscribersTracking
     private let authenticateTransportTypeSwitcher: AuthenticateTransportTypeSwitcher
+    private let topicReconciliationService: TopicReconciliationService
 
 
     // Link Mode
@@ -192,7 +197,6 @@ public final class SignClient: SignClientProtocol {
     private let linkSessionRequestSubscriber: LinkSessionRequestSubscriber
     private let sessionResponderDispatcher: SessionResponderDispatcher
     private let linkSessionRequestResponseSubscriber: LinkSessionRequestResponseSubscriber
-    private let messageVerifier: MessageVerifier
 
     private var publishers = Set<AnyCancellable>()
 
@@ -231,7 +235,7 @@ public final class SignClient: SignClientProtocol {
          sessionResponderDispatcher: SessionResponderDispatcher,
          linkSessionRequestResponseSubscriber: LinkSessionRequestResponseSubscriber,
          authenticateTransportTypeSwitcher: AuthenticateTransportTypeSwitcher,
-         messageVerifier: MessageVerifier
+         topicReconciliationService: TopicReconciliationService
     ) {
         self.logger = logger
         self.networkingClient = networkingClient
@@ -266,7 +270,7 @@ public final class SignClient: SignClientProtocol {
         self.sessionResponderDispatcher = sessionResponderDispatcher
         self.linkSessionRequestResponseSubscriber = linkSessionRequestResponseSubscriber
         self.authenticateTransportTypeSwitcher = authenticateTransportTypeSwitcher
-        self.messageVerifier = messageVerifier
+        self.topicReconciliationService = topicReconciliationService
 
         setUpConnectionObserving()
         setUpEnginesCallbacks()
@@ -284,7 +288,9 @@ public final class SignClient: SignClientProtocol {
     public func connect(
         namespaces: [String: ProposalNamespace],
         sessionProperties: [String: String]? = nil,
-        scopedProperties: [String: String]? = nil
+        scopedProperties: [String: String]? = nil,
+        authentication: [AuthRequestParams]? = nil
+        // walletPay: WalletPayParams? = nil  // COMMENTED OUT - WalletPay disabled
     ) async throws -> WalletConnectURI {
         logger.debug("Connecting Application")
         let pairingURI = try await pairingClient.create()
@@ -294,7 +300,9 @@ public final class SignClient: SignClientProtocol {
             optionalNamespaces: namespaces,
             sessionProperties: sessionProperties,
             scopedProperties: scopedProperties,
-            relay: RelayProtocolOptions(protocol: "irn", data: nil)
+            relay: RelayProtocolOptions(protocol: "irn", data: nil),
+            authentication: authentication
+            // walletPay: walletPay  // COMMENTED OUT - WalletPay disabled
         )
         return pairingURI
     }
@@ -330,6 +338,7 @@ public final class SignClient: SignClientProtocol {
     //---------------------------------------AUTH-----------------------------------
 
     /// For a dApp to propose an authenticated session to a wallet.
+    @available(*, deprecated, message: "Use connect(namespaces:sessionProperties:scopedProperties:authentication:) and pass authentication params instead.")
     public func authenticate(
         _ params: AuthRequestParams,
         walletUniversalLink: String? = nil
@@ -391,15 +400,10 @@ public final class SignClient: SignClientProtocol {
         try AuthPayloadBuilder.build(payload: payload, supportedEVMChains: supportedEVMChains, supportedMethods: supportedMethods)
     }
 
-    // MARK: - SIWE
-
+    ///Formats CAIP-122 Sign with X message
     public func formatAuthMessage(payload: AuthPayload, account: Account) throws -> String {
         let cacaoPayload = try CacaoPayloadBuilder.makeCacaoPayload(authPayload: payload, account: account)
-        return try SIWEFromCacaoPayloadFormatter().formatMessage(from: cacaoPayload)
-    }
-
-    public func verifySIWE(signature: String, message: String, address: String, chainId: String) async throws {
-        try await messageVerifier.verify(signature: signature, message: message, address: address, chainId: chainId)
+        return try SignWithXFormatter().formatMessage(from: cacaoPayload)
     }
 
     //-----------------------------------------------------------------------------------
@@ -408,8 +412,8 @@ public final class SignClient: SignClientProtocol {
     /// - Parameters:
     ///   - proposalId: Session Proposal id
     ///   - namespaces: namespaces for given session, needs to contain at least required namespaces proposed by dApp.
-    public func approve(proposalId: String, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil) async throws -> Session {
-        try await approveEngine.approveProposal(proposerPubKey: proposalId, validating: namespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties)
+    public func approve(proposalId: String, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil, proposalRequestsResponses: ProposalRequestsResponses? = nil) async throws -> Session {
+        try await approveEngine.approveProposal(proposerPubKey: proposalId, validating: namespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties, proposalRequestsResponses: proposalRequestsResponses)
     }
 
     /// For the wallet to reject a session proposal.
@@ -555,8 +559,8 @@ public final class SignClient: SignClientProtocol {
         approveEngine.onSessionRejected = { [unowned self] proposal, reason in
             sessionRejectionPublisherSubject.send((proposal, reason))
         }
-        approveEngine.onSessionSettle = { [unowned self] settledSession in
-            sessionSettlePublisherSubject.send(settledSession)
+        approveEngine.onSessionSettle = { [unowned self] settledSession, responses in
+            sessionSettlePublisherSubject.send((session: settledSession, responses: responses))
         }
         sessionEngine.onSessionDelete = { [unowned self] topic, reason in
             sessionDeletePublisherSubject.send((topic, reason))
@@ -601,6 +605,5 @@ public final class SignClient: SignClientProtocol {
             self?.socketConnectionStatusPublisherSubject.send(status)
         }.store(in: &publishers)
     }
-    
-}
 
+}

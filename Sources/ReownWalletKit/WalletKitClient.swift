@@ -1,6 +1,6 @@
 import Foundation
 import Combine
-import YttriumWrapper
+// import YttriumWrapper
 
 /// Web3 Wallet Client
 ///
@@ -8,12 +8,9 @@ import YttriumWrapper
 ///
 /// Access via `WalletKit.instance`
 public class WalletKitClient {
-    enum Errors: LocalizedError {
-        case smartAccountNotEnabled
-        case chainAbstractionNotEnabled
-    }
+
     // MARK: - Public Properties
-    
+
     /// Publisher that sends session proposal
     ///
     /// event is emited on responder client only
@@ -27,40 +24,42 @@ public class WalletKitClient {
     public var sessionRequestPublisher: AnyPublisher<(request: Request, context: VerifyContext?), Never> {
         signClient.sessionRequestPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends authentication requests
     ///
     /// Wallet should subscribe on events in order to receive auth requests.
     public var authenticateRequestPublisher: AnyPublisher<(request: AuthenticationRequest, context: VerifyContext?), Never> {
         signClient.authenticateRequestPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends sessions on every sessions update
     ///
     /// Event will be emited on controller and non-controller clients.
     public var sessionsPublisher: AnyPublisher<[Session], Never> {
         signClient.sessionsPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends web socket connection status
     public var socketConnectionStatusPublisher: AnyPublisher<SocketConnectionStatus, Never> {
         signClient.socketConnectionStatusPublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends session when one is settled
     ///
     /// Event is emited on proposer and responder client when both communicating peers have successfully established a session.
     public var sessionSettlePublisher: AnyPublisher<Session, Never> {
-        signClient.sessionSettlePublisher.eraseToAnyPublisher()
+        signClient.sessionSettlePublisher
+            .map(\.session)
+            .eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends deleted session topic
     ///
     /// Event can be emited on any type of the client.
     public var sessionDeletePublisher: AnyPublisher<(String, Reason), Never> {
         signClient.sessionDeletePublisher.eraseToAnyPublisher()
     }
-    
+
     /// Publisher that sends response for session request
     ///
     /// In most cases that event will be emited on dApp client.
@@ -103,33 +102,39 @@ public class WalletKitClient {
     private let signClient: SignClientProtocol
     private let pairingClient: PairingClientProtocol
     private let pushClient: PushClientProtocol
-    private let chainAbstractionClient: ChainAbstractionClient
+    // private let chainAbstractionClient: ChainAbstractionClient
 
     private var account: Account?
 
     // Namespaces
-    public let ChainAbstraction: ChainAbstractionNamespace
+    // public let ChainAbstraction: ChainAbstractionNamespace
+
+    /// Pay namespace for WalletConnect Pay functionality
+    public let Pay: PayNamespace
 
     init(
         signClient: SignClientProtocol,
         pairingClient: PairingClientProtocol,
         pushClient: PushClientProtocol,
-        chainAbstractionClient: ChainAbstractionClient,
-        ChainAbstractionNamespace: ChainAbstractionNamespace
+        payNamespace: PayNamespace
+        // chainAbstractionClient: ChainAbstractionClient,
+        // ChainAbstractionNamespace: ChainAbstractionNamespace
     ) {
         self.signClient = signClient
         self.pairingClient = pairingClient
         self.pushClient = pushClient
-        self.chainAbstractionClient = chainAbstractionClient
-        self.ChainAbstraction = ChainAbstractionNamespace
+        self.Pay = payNamespace
+        // self.chainAbstractionClient = chainAbstractionClient
+        // self.ChainAbstraction = ChainAbstractionNamespace
     }
-    
+
     /// For a wallet to approve a session proposal.
     /// - Parameters:
     ///   - proposalId: Session Proposal id
     ///   - namespaces: namespaces for given session, needs to contain at least required namespaces proposed by dApp.
-    public func approve(proposalId: String, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil) async throws -> Session {
-        try await signClient.approve(proposalId: proposalId, namespaces: namespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties)
+    ///   - proposalRequestsResponses: optional authentication responses for session proposals containing authentication requests
+    public func approve(proposalId: String, namespaces: [String: SessionNamespace], sessionProperties: [String: String]? = nil, scopedProperties: [String: String]? = nil, proposalRequestsResponses: ProposalRequestsResponses? = nil) async throws -> Session {
+        try await signClient.approve(proposalId: proposalId, namespaces: namespaces, sessionProperties: sessionProperties, scopedProperties: scopedProperties, proposalRequestsResponses: proposalRequestsResponses)
     }
 
     /// For the wallet to reject a session proposal.
@@ -154,7 +159,7 @@ public class WalletKitClient {
     public func extend(topic: String) async throws {
         try await signClient.extend(topic: topic)
     }
-    
+
     /// For the wallet to respond on pending dApp's JSON-RPC request
     /// - Parameters:
     ///   - topic: Topic of the session for which the request was received.
@@ -163,7 +168,7 @@ public class WalletKitClient {
     public func respond(topic: String, requestId: RPCID, response: RPCResult) async throws {
         try await signClient.respond(topic: topic, requestId: requestId, response: response)
     }
-    
+
     /// For the wallet to emit an event to a dApp
     ///
     /// When a client wants to emit an event to its peer client (eg. chain changed or tx replaced)
@@ -178,7 +183,7 @@ public class WalletKitClient {
     public func emit(topic: String, event: Session.Event, chainId: Blockchain) async throws {
         try await signClient.emit(topic: topic, event: event, chainId: chainId)
     }
-    
+
     /// For wallet to receive a session proposal from a dApp
     /// Responder should call this function in order to accept peer's pairing and be able to subscribe for future session proposals.
     /// - Parameter uri: Pairing URI that is commonly presented as a QR code by a dapp.
@@ -192,7 +197,7 @@ public class WalletKitClient {
 
     @available(*, deprecated, message: "This method is deprecated. Pairing will disconnect automatically")
     public func disconnectPairing(topic: String) async {}
-    
+
     /// For a wallet and a dApp to terminate a session
     ///
     /// Should Error:
@@ -208,7 +213,7 @@ public class WalletKitClient {
     public func getSessions() -> [Session] {
         signClient.getSessions()
     }
-    
+
     public func formatAuthMessage(payload: AuthPayload, account: Account) throws -> String {
         try signClient.formatAuthMessage(payload: payload, account: account)
     }
@@ -236,7 +241,7 @@ public class WalletKitClient {
     }
     //---------------------------------------------------
 
-    
+
     /// Query pending requests
     /// - Returns: Pending requests received from peer with `wc_sessionRequest` protocol method
     /// - Parameter topic: topic representing session for which you want to get pending requests. If nil, you will receive pending requests for all active sessions.
@@ -263,18 +268,20 @@ public class WalletKitClient {
     public func register(deviceToken: Data, enableEncrypted: Bool = false) async throws {
         try await pushClient.register(deviceToken: deviceToken, enableEncrypted: enableEncrypted)
     }
-    
+
     /// Delete all stored data such as: pairings, sessions, keys
     ///
     /// - Note: Will unsubscribe from all topics
     public func cleanup() async throws {
         try await signClient.cleanup()
     }
-    
+
     public func getPairings() -> [Pairing] {
         return pairingClient.getPairings()
     }
 
+    // Chain abstraction methods commented out
+    /*
     public func prepareERC20TransferCall(
         erc20Address: String,
         to: String,
@@ -288,6 +295,7 @@ public class WalletKitClient {
     public func erc20Balance(chainId: String, token: String, owner: String) async throws -> Ffiu256 {
         return try await chainAbstractionClient.erc20TokenBalance(chainId: chainId, token: token, owner: owner)
     }
+    */
 }
 
 
@@ -298,4 +306,3 @@ extension WalletKitClient {
     }
 }
 #endif
-

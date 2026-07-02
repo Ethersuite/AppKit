@@ -7,7 +7,6 @@ final class SessionRequestInteractor {
     func respondSessionRequest(sessionRequest: Request, importAccount: ImportAccount) async throws -> Bool {
         do {
             let result = try await Signer.sign(request: sessionRequest, importAccount: importAccount)
-            AlertPresenter.present(message: result.description, type: .success)
             try await WalletKit.instance.respond(
                 topic: sessionRequest.topic,
                 requestId: sessionRequest.id,
@@ -32,14 +31,14 @@ final class SessionRequestInteractor {
             requestId: sessionRequest.id,
             response: .error(.init(code: 0, message: ""))
         )
-        
+
         /* Redirect */
         let session = getSession(topic: sessionRequest.topic)
         if let uri = session?.peer.redirect?.native {
             ReownRouter.goBack(uri: uri)
         }
     }
-    
+
     func getSession(topic: String) -> Session? {
         return WalletKit.instance.getSessions().first(where: { $0.topic == topic })
     }

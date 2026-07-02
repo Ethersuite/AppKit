@@ -23,7 +23,7 @@ public class TVFCollector: TVFCollectorProtocol {
     }
 
     private let chainCollectors: [ChainTVFCollector]
-    
+
     public init() {
         self.chainCollectors = [
             EVMTVFCollector(),
@@ -37,7 +37,8 @@ public class TVFCollector: TVFCollectorProtocol {
             BitcoinTVFCollector(),
             StacksTVFCollector(),
             SuiTVFCollector(),
-            PolkadotTVFCollector()
+            PolkadotTVFCollector(),
+            TonTVFCollector()
         ]
     }
 
@@ -67,7 +68,7 @@ public class TVFCollector: TVFCollectorProtocol {
         guard let theTag = Tag(rawValue: tag) else {
             return nil
         }
-        
+
         // Find a collector that supports this method, if any
         let collector = chainCollectors.first { $0.supportsMethod(rpcMethod) }
 
@@ -97,14 +98,14 @@ public class TVFCollectorMock: TVFCollectorProtocol {
         let result: RPCResult?
         let tag: Int
     }
-    
+
     private(set) public var collectCalls: [CollectCall] = []
     public var mockResult: TVFData?
-    
+
     public init(mockResult: TVFData? = nil) {
         self.mockResult = mockResult
     }
-    
+
     public func collect(
         rpcMethod: String,
         rpcParams: AnyCodable,
